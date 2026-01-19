@@ -25,7 +25,8 @@ const plugins = is_prod
 export default {
   input: 'app/index.js',
   output: {
-    file:       is_prod ? 'app/bundle.min.js' : 'app/bundle.js',
+    // 확장프로그램 폴더에 직접 출력
+    file:       is_prod ? 'extension/toolbar/bundle.min.js' : 'app/bundle.js',
     format:     'es',
     sourcemap:  is_prod ? null : 'inline',
   },

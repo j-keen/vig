@@ -3,13 +3,14 @@ import hotkeys    from 'hotkeys-js'
 
 import {
   Handles, Handle, Label, Overlay, Gridlines, Corners,
-  Hotkeys, Metatip, Ally, Distance, BoxModel, Grip
+  Hotkeys, Metatip, Ally, Distance, BoxModel, Grip,
+  HistoryPanel
 } from '../'
 
 import {
-  Selectable, Moveable, Padding, Margin, EditText, Font,
-  Flex, Search, ColorPicker, BoxShadow, HueShift, MetaTip,
-  Guides, Screenshot, Position, Accessibility, draggable
+  Selectable, Moveable, Padding, Margin,
+  Flex, Guides, Position, draggable,
+  AICopy, setupAICopyTooltip
 } from '../../features/'
 
 import {
@@ -20,7 +21,6 @@ import {
 
 import { VisBugModel }            from './model'
 import * as Icons                 from './vis-bug.icons'
-import { provideSelectorEngine }  from '../../features/search'
 import { PluginRegistry }         from '../../plugins/_registry'
 import {
   metaKey,
@@ -51,15 +51,22 @@ export default class VisBug extends HTMLElement {
     this.setup()
 
     this.selectorEngine = Selectable(this)
-    this.colorPicker    = ColorPicker(this.$shadow, this.selectorEngine)
 
-    provideSelectorEngine(this.selectorEngine)
+    // 안내선 항상 활성화 (배경 기능으로)
+    this.guidesFeature = Guides(this.selectorEngine)
 
+    // 히스토리 패널 항상 표시
+    this.historyPanel = document.createElement('visbug-history')
+    document.body.appendChild(this.historyPanel)
+
+    // 기본 도구: guides
     this.toolSelected($('[data-tool="guides"]', this.$shadow)[0])
   }
 
   disconnectedCallback() {
-    this.deactivate_feature()
+    this.deactivate_feature && this.deactivate_feature()
+    this.guidesFeature && this.guidesFeature()
+    this.historyPanel && this.historyPanel.remove()
     this.cleanup()
     this.selectorEngine.disconnect()
     hotkeys.unbind(
@@ -76,10 +83,6 @@ export default class VisBug extends HTMLElement {
   setup() {
     this.$shadow.innerHTML = this.render()
 
-    this.hasAttribute('color-mode')
-      ? this.getAttribute('color-mode')
-      : this.setAttribute('color-mode', 'hex')
-
     this.hasAttribute('color-scheme')
       ? this.getAttribute('color-scheme')
       : this.setAttribute('color-scheme', 'auto')
@@ -87,7 +90,7 @@ export default class VisBug extends HTMLElement {
     this.setAttribute('popover', 'manual')
     this.showPopover && this.showPopover()
 
-    const main_ol = this.$shadow.querySelector('ol:not([colors])')
+    const main_ol = this.$shadow.querySelector('ol')
     const buttonPieces = $('li[data-tool], li[data-tool] *', main_ol)
 
     const clickEvent = (e) => {
@@ -126,6 +129,9 @@ export default class VisBug extends HTMLElement {
         this.$shadow.host.style.display === 'none'
           ? 'block'
           : 'none')
+
+    // AI 복사 버튼 호버 툴팁 설정
+    setupAICopyTooltip(this.$shadow)
   }
 
   cleanup() {
@@ -135,7 +141,7 @@ export default class VisBug extends HTMLElement {
       .filter(node => node.nodeName.includes('VISBUG'))
       .forEach(el => el.remove())
 
-    this.teardown()
+    this.teardown && this.teardown()
 
     document.querySelectorAll('[data-pseudo-select=true]')
       .forEach(el =>
@@ -146,11 +152,13 @@ export default class VisBug extends HTMLElement {
     if (typeof el === 'string')
       el = $(`[data-tool="${el}"]`, this.$shadow)[0]
 
+    if (!el) return
+
     if (this.active_tool && this.active_tool.dataset.tool === el.dataset.tool) return
 
     if (this.active_tool) {
       this.active_tool.attr('data-active', null)
-      this.deactivate_feature()
+      this.deactivate_feature && this.deactivate_feature()
     }
 
     el.attr('data-active', true)
@@ -169,20 +177,6 @@ export default class VisBug extends HTMLElement {
             ${this.demoTip({key, ...tool})}
           </li>
         `,'')}
-      </ol>
-      <ol colors>
-        <li class="color" id="foreground" aria-label="Text" aria-description="Change the text color">
-          <input type="color">
-          ${Icons.color_text}
-        </li>
-        <li class="color" id="background" aria-label="Background or Fill" aria-description="Change the background color or fill of svg">
-          <input type="color">
-          ${Icons.color_background}
-        </li>
-        <li class="color" id="border" aria-label="Border or Stroke" aria-description="Change the border color or stroke of svg">
-          <input type="color">
-          ${Icons.color_border}
-        </li>
       </ol>
     `
   }
@@ -205,8 +199,20 @@ export default class VisBug extends HTMLElement {
     `
   }
 
-  move() {
-    this.deactivate_feature = Moveable(this.selectorEngine)
+  // 도구 메서드들
+  guides() {
+    // 안내선은 이미 connectedCallback에서 활성화됨
+    // 여기서는 추가 동작 없음 (이미 배경에서 실행 중)
+    this.deactivate_feature = () => {}
+  }
+
+  position() {
+    let feature = Position()
+    this.selectorEngine.onSelectedUpdate(feature.onNodesSelected)
+    this.deactivate_feature = () => {
+      this.selectorEngine.removeSelectedCallback(feature.onNodesSelected)
+      feature.disconnect()
+    }
   }
 
   margin() {
@@ -217,58 +223,16 @@ export default class VisBug extends HTMLElement {
     this.deactivate_feature = Padding(this.selectorEngine)
   }
 
-  font() {
-    this.deactivate_feature = Font(this.selectorEngine)
-  }
-
-  text() {
-    this.selectorEngine.onSelectedUpdate(EditText)
-    this.deactivate_feature = () =>
-      this.selectorEngine.removeSelectedCallback(EditText)
-  }
-
   align() {
     this.deactivate_feature = Flex(this.selectorEngine)
   }
 
-  search() {
-    this.deactivate_feature = Search($('[data-tool="search"]', this.$shadow))
+  move() {
+    this.deactivate_feature = Moveable(this.selectorEngine)
   }
 
-  boxshadow() {
-    this.deactivate_feature = BoxShadow(this.selectorEngine)
-  }
-
-  hueshift() {
-    this.deactivate_feature = HueShift({
-      Color:  this.colorPicker,
-      Visbug: this.selectorEngine,
-    })
-  }
-
-  inspector() {
-    this.deactivate_feature = MetaTip(this.selectorEngine)
-  }
-
-  accessibility() {
-    this.deactivate_feature = Accessibility(this.selectorEngine)
-  }
-
-  guides() {
-    this.deactivate_feature = Guides(this.selectorEngine)
-  }
-
-  screenshot() {
-    this.deactivate_feature = Screenshot()
-  }
-
-  position() {
-    let feature = Position()
-    this.selectorEngine.onSelectedUpdate(feature.onNodesSelected)
-    this.deactivate_feature = () => {
-      this.selectorEngine.removeSelectedCallback(feature.onNodesSelected)
-      feature.disconnect()
-    }
+  aicopy() {
+    this.deactivate_feature = AICopy(this)
   }
 
   execCommand(command) {

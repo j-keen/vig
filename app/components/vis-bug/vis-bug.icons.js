@@ -132,3 +132,10 @@ export const accessibility = `
     <path d="M12,2c1.1,0,2,0.9,2,2s-0.9,2-2,2s-2-0.9-2-2S10.9,2,12,2z M21,9h-6v13h-2v-6h-2v6H9V9H3V7h18V9z"/>
   </svg>
 `
+
+export const aicopy = `
+  <svg viewBox="0 0 24 24">
+    <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+    <path d="M12 17l3-3-1-1-1.5 1.5V11h-1v3.5L10 13l-1 1z"/>
+  </svg>
+`

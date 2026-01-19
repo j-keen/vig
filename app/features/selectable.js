@@ -8,6 +8,10 @@ import { queryPage } from './search'
 import { createMeasurements, clearMeasurements } from './measurements'
 import { createMarginVisual } from './margin'
 import { createPaddingVisual } from './padding'
+import { draggable } from './position'
+import { ChangeTracker } from './change-tracker'
+import { AIFormatter } from './ai-formatter'
+import { takeScreenshot } from './screenshot'
 
 import { showTip as showMetaTip, removeAll as removeAllMetaTips } from './metatip'
 import { showTip as showAccessibilityTip, removeAll as removeAllAccessibilityTips } from './accessibility'
@@ -25,6 +29,7 @@ export function Selectable(visbug) {
   let selectedCallbacks   = []
   let labels              = []
   let handles             = []
+  let draggables          = []  // 드래그 가능한 요소들 추적
 
   const hover_state       = {
     target:   null,
@@ -55,6 +60,9 @@ export function Selectable(visbug) {
     hotkeys('tab,shift+tab,enter,shift+enter', on_keyboard_traversal)
     hotkeys(`${metaKey}+shift+enter`, on_select_children)
     hotkeys(`shift+'`, on_select_parent)
+    hotkeys(`${metaKey}+z`, on_undo)
+    hotkeys(`${metaKey}+shift+z`, on_redo)
+    hotkeys(`${metaKey}+shift+s`, on_screenshot)
   }
 
   const unlisten = () => {
@@ -68,7 +76,7 @@ export function Selectable(visbug) {
     document.removeEventListener('cut', on_cut)
     document.removeEventListener('paste', on_paste)
 
-    hotkeys.unbind(`esc,${metaKey}+d,backspace,del,delete,alt+del,alt+backspace,${metaKey}+e,${metaKey}+shift+e,${metaKey}+g,${metaKey}+shift+g,tab,shift+tab,enter,shift+enter`)
+    hotkeys.unbind(`esc,${metaKey}+d,backspace,del,delete,alt+del,alt+backspace,${metaKey}+e,${metaKey}+shift+e,${metaKey}+g,${metaKey}+shift+g,tab,shift+tab,enter,shift+enter,${metaKey}+z,${metaKey}+shift+z,${metaKey}+shift+s`)
   }
 
   const on_click = e => {
@@ -79,6 +87,13 @@ export function Selectable(visbug) {
 
     e.preventDefault()
     if (!e.altKey) e.stopPropagation()
+
+    // Ctrl+클릭: 요소 선택 없이 바로 식별자 복사
+    if (e.ctrlKey || e.metaKey) {
+      const identifier = AIFormatter.getIdentifier($target)
+      navigator.clipboard.writeText(identifier)
+      return
+    }
 
     if (!e.shiftKey) {
       unselect_all({silent:true})
@@ -164,6 +179,31 @@ export function Selectable(visbug) {
     selected.forEach(el =>
       el.attr('style', null))
 
+  const on_undo = e => {
+    e.preventDefault()
+    const result = ChangeTracker.undo()
+    if (result) {
+      // 복원된 요소 선택
+      unselect_all({silent: true})
+      select(result.element)
+    }
+  }
+
+  const on_redo = e => {
+    e.preventDefault()
+    const result = ChangeTracker.redo()
+    if (result) {
+      // 다시 변경된 요소 선택
+      unselect_all({silent: true})
+      select(result.element)
+    }
+  }
+
+  const on_screenshot = e => {
+    e.preventDefault()
+    takeScreenshot()
+  }
+
   const on_copy = async e => {
     // if user has selected text, dont try to copy an element
     if (window.getSelection().toString().length)
@@ -171,16 +211,16 @@ export function Selectable(visbug) {
 
     if (selected[0] && window.node_clipboard !== selected[0]) {
       e.preventDefault()
-      let $node = selected[0].cloneNode(true)
-      $node.removeAttribute('data-selected')
 
-      window.copy_backup = $node.outerHTML
-      e.clipboardData.setData('text/html', window.copy_backup)
+      // AI 친화적 식별자로 복사 (간결한 형식)
+      const identifier = AIFormatter.getIdentifier(selected[0])
+      window.copy_backup = identifier
+      e.clipboardData.setData('text/plain', identifier)
 
       const {state} = await navigator.permissions.query({name:'clipboard-write'})
 
       if (state === 'granted')
-        await navigator.clipboard.writeText(window.copy_backup)
+        await navigator.clipboard.writeText(identifier)
     }
   }
 
@@ -444,11 +484,11 @@ export function Selectable(visbug) {
     overlayMetaUI({
       el,
       id,
-      no_label: 
-           tool === 'inspector' 
-        || tool === 'guides' 
-        || tool === 'margin' 
-        || tool === 'move' 
+      no_label:
+           tool === 'inspector'
+        || tool === 'guides'
+        || tool === 'margin'
+        || tool === 'move'
         || tool === 'accessibility',
     })
 
@@ -456,6 +496,13 @@ export function Selectable(visbug) {
       tip.hidePopover && tip.hidePopover()
       tip.showPopover && tip.showPopover()
     })
+
+    // 드래그 이동 항상 활성화 (다중 선택 시 함께 이동)
+    const dragState = draggable({
+      el,
+      getSiblings: () => selected  // 현재 선택된 모든 요소 반환
+    })
+    draggables.push(dragState)
 
     selected.unshift(el)
     tellWatchers()
@@ -486,6 +533,10 @@ export function Selectable(visbug) {
     ]).forEach(el =>
       el.remove())
 
+    // 드래그 정리
+    draggables.forEach(d => d.teardown && d.teardown())
+    draggables = []
+
     labels    = []
     handles   = []
     selected  = []
@@ -499,6 +550,9 @@ export function Selectable(visbug) {
       else if (canMoveLeft(el)) return canMoveLeft(el)
       else if (el.parentNode)   return el.parentNode
     })
+
+    // 삭제 전에 추적 기록
+    selected.forEach(el => ChangeTracker.trackDeletion(el))
 
     Array.from([...selected, ...labels, ...handles]).forEach(el =>
       el.remove())

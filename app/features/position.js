@@ -1,6 +1,7 @@
 import $ from 'blingblingjs'
 import hotkeys from 'hotkeys-js'
 import { metaKey, getStyle, getSide, showHideSelected } from '../utilities/'
+import { ChangeTracker } from './change-tracker'
 
 const key_events = 'up,down,left,right'
   .split(',')
@@ -43,7 +44,7 @@ export function Position() {
   }
 }
 
-export function draggable({el, surface = el, cursor = 'move', clickEvent}) {
+export function draggable({el, surface = el, cursor = 'move', clickEvent, getSiblings = null}) {
    const state = {
     target: el,
     surface,
@@ -56,7 +57,9 @@ export function draggable({el, surface = el, cursor = 'move', clickEvent}) {
       x: 0,
       y: 0,
     },
-    travelDistance: 0
+    travelDistance: 0,
+    siblings: [],  // 다중 선택된 형제 요소들
+    siblingOffsets: []  // 형제 요소들의 초기 위치
   }
 
   const setup = () => {
@@ -78,12 +81,52 @@ export function draggable({el, surface = el, cursor = 'move', clickEvent}) {
   }
 
   const onMouseDown = e => {
-    if(e.target !== state.surface) return
+    // 요소 자체 또는 자식 요소 클릭도 허용 (Shift+드래그 버그 수정)
+    if(!el.contains(e.target)) return
     e.preventDefault()
 
-    if(getComputedStyle(el).position == 'static')
+    // 변경 추적: 원본 스타일 캡처
+    ChangeTracker.captureOriginal(el)
+
+    // 다중 선택된 형제 요소들 가져오기
+    state.siblings = getSiblings ? getSiblings().filter(sibling => sibling !== el) : []
+    state.siblingOffsets = []
+
+    // Shift+드래그: absolute로 완전 독립 이동 (연관 요소 영향 없음)
+    if (e.shiftKey) {
+      const rect = el.getBoundingClientRect()
+      el.style.position = 'absolute'
+      el.style.left = rect.left + window.scrollX + 'px'
+      el.style.top = rect.top + window.scrollY + 'px'
+
+      // 형제 요소들도 absolute로 변환
+      state.siblings.forEach(sibling => {
+        ChangeTracker.captureOriginal(sibling)
+        const sibRect = sibling.getBoundingClientRect()
+        sibling.style.position = 'absolute'
+        sibling.style.left = sibRect.left + window.scrollX + 'px'
+        sibling.style.top = sibRect.top + window.scrollY + 'px'
+        sibling.style.willChange = 'top,left'
+      })
+    }
+    else if(getComputedStyle(el).position == 'static') {
       el.style.position = 'relative'
+    }
     el.style.willChange = 'top,left'
+
+    // 형제 요소들의 초기 위치 캡처
+    state.siblings.forEach(sibling => {
+      ChangeTracker.captureOriginal(sibling)
+      if (getComputedStyle(sibling).position === 'static') {
+        sibling.style.position = 'relative'
+      }
+      sibling.style.willChange = 'top,left'
+      state.siblingOffsets.push({
+        el: sibling,
+        x: parseInt(getStyle(sibling, 'left')) || 0,
+        y: parseInt(getStyle(sibling, 'top')) || 0
+      })
+    })
 
     if (el instanceof SVGElement) {
       const translate = el.getAttribute('transform')
@@ -107,13 +150,25 @@ export function draggable({el, surface = el, cursor = 'move', clickEvent}) {
   }
 
   const onMouseUp = e => {
-    if(e.target !== state.surface) return
+    // 요소 자체 또는 자식 요소 클릭도 허용
+    if(!el.contains(e.target)) return
 
     e.preventDefault()
     e.stopPropagation()
 
     state.mouse.down = false
     el.style.willChange = null
+
+    // 변경 추적: 현재 스타일 업데이트 및 undo 스택에 저장
+    ChangeTracker.updateCurrent(el)
+    ChangeTracker.pushToUndoStack(el)
+
+    // 형제 요소들도 변경 추적
+    state.siblingOffsets.forEach(({el: sibling}) => {
+      sibling.style.willChange = null
+      ChangeTracker.updateCurrent(sibling)
+      ChangeTracker.pushToUndoStack(sibling)
+    })
 
     if (el instanceof SVGElement) {
       const translate = el.getAttribute('transform')
@@ -141,17 +196,25 @@ export function draggable({el, surface = el, cursor = 'move', clickEvent}) {
     e.preventDefault()
     e.stopPropagation()
 
+    const deltaX = e.clientX - state.mouse.x
+    const deltaY = e.clientY - state.mouse.y
 
     if (el instanceof SVGElement) {
       el.setAttribute('transform', `translate(
-        ${state.element.x + e.clientX - state.mouse.x},
-        ${state.element.y + e.clientY - state.mouse.y}
+        ${state.element.x + deltaX},
+        ${state.element.y + deltaY}
       )`)
     }
     else {
-      el.style.left = state.element.x + e.clientX - state.mouse.x + 'px'
-      el.style.top  = state.element.y + e.clientY - state.mouse.y + 'px'
+      el.style.left = state.element.x + deltaX + 'px'
+      el.style.top  = state.element.y + deltaY + 'px'
     }
+
+    // 형제 요소들도 같은 거리만큼 이동
+    state.siblingOffsets.forEach(({el: sibling, x, y}) => {
+      sibling.style.left = x + deltaX + 'px'
+      sibling.style.top  = y + deltaY + 'px'
+    })
 
     state.travelDistance += 1
   }
@@ -166,6 +229,11 @@ export function positionElement(els, direction) {
   els
     .map(el => ensurePositionable(el))
     .map(el => showHideSelected(el))
+    .map(el => {
+      // 변경 추적: 원본 스타일 캡처
+      ChangeTracker.captureOriginal(el)
+      return el
+    })
     .map(el => ({
         el,
         ...extractCurrentValueAndSide(el, direction),
@@ -178,10 +246,14 @@ export function positionElement(els, direction) {
           ? payload.current + payload.amount
           : payload.current - payload.amount
       }))
-    .forEach(({el, style, position}) =>
+    .forEach(({el, style, position}) => {
       el instanceof SVGElement
         ? setTranslateOnSVG(el, direction, position)
-        : el.style[style] = position + 'px')
+        : el.style[style] = position + 'px'
+      // 변경 추적: 현재 스타일 업데이트 및 undo 스택에 저장
+      ChangeTracker.updateCurrent(el)
+      ChangeTracker.pushToUndoStack(el)
+    })
 }
 
 const extractCurrentValueAndSide = (el, direction) => {

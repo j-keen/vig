@@ -1,6 +1,7 @@
 import $ from 'blingblingjs'
 import { HandleStyles } from '../styles.store'
 import { clamp } from '../../utilities/numbers'
+import { ChangeTracker } from '../../features/index.js'
 
 export class Handle extends HTMLElement {
 
@@ -42,6 +43,9 @@ export class Handle extends HTMLElement {
     const [sourceEl] = $(`[data-label-id="${nodeLabelId}"]`)
 
     if (!sourceEl) return
+
+    // 크기 변경 전 원본 스타일 캡처
+    ChangeTracker.captureOriginal(sourceEl)
 
     const { x: initialX, y: initialY } = e
     const initialStyle = getComputedStyle(sourceEl)
@@ -162,6 +166,10 @@ export class Handle extends HTMLElement {
       document.body.style.cursor = originalDocumentCursor
       document.body.style.userSelect = originalDocumentUserSelect
       sourceEl.style.transition = originalElTransition
+
+      // 크기 변경 완료 후 현재 스타일 기록 및 undo 스택에 저장
+      ChangeTracker.updateCurrent(sourceEl)
+      ChangeTracker.pushToUndoStack(sourceEl)
     }
   }
 

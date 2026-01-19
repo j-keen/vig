@@ -1,5 +1,6 @@
 import hotkeys from 'hotkeys-js'
 import { metaKey, getStyle, getSide, showHideSelected } from '../utilities/'
+import { ChangeTracker } from './change-tracker'
 
 const key_events = 'up,down,left,right'
   .split(',')
@@ -37,6 +38,11 @@ export function Margin(visbug) {
 export function pushElement(els, direction) {
   els
     .map(el => showHideSelected(el))
+    .map(el => {
+      // 변경 추적: 원본 스타일 캡처
+      ChangeTracker.captureOriginal(el)
+      return el
+    })
     .map(el => ({
       el,
       style:    'margin' + getSide(direction),
@@ -50,8 +56,11 @@ export function pushElement(els, direction) {
           ? payload.current - payload.amount
           : payload.current + payload.amount
       }))
-    .forEach(({el, style, margin}) =>
-      el.style[style] = `${margin < 0 ? 0 : margin}px`)
+    .forEach(({el, style, margin}) => {
+      el.style[style] = `${margin < 0 ? 0 : margin}px`
+      // 변경 추적: 현재 스타일 업데이트
+      ChangeTracker.updateCurrent(el)
+    })
 }
 
 export function pushAllElementSides(els, keycommand) {

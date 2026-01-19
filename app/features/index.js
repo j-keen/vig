@@ -14,4 +14,8 @@ export { Guides } from './guides'
 export { Screenshot } from './screenshot'
 export { Position, draggable } from './position'
 export { Accessibility } from './accessibility'
+export { AICopy, trackPositionChange, updateTrackedPosition, setupAICopyTooltip } from './aicopy'
+export { ChangeTracker } from './change-tracker'
+export { AIFormatter } from './ai-formatter'
+export { HumanFormatter } from './human-formatter'
 

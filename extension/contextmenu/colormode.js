@@ -24,10 +24,12 @@ var platform = typeof browser === 'undefined'
 
 const sendColorMode = () => {
   platform.tabs.query({active: true, currentWindow: true}, ([tab]) => {
-    tab && platform.tabs.sendMessage(tab.id, {
-      action: 'COLOR_MODE',
-      params: {mode:colormodestate.mode},
-    })
+    if (tab) {
+      platform.tabs.sendMessage(tab.id, {
+        action: 'COLOR_MODE',
+        params: {mode:colormodestate.mode},
+      }).catch(() => {}) // 에러 무시 (탭에 content script가 없을 수 있음)
+    }
   })
 }
 
