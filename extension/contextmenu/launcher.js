@@ -2,6 +2,8 @@ var platform = typeof browser === 'undefined'
   ? chrome
   : browser
 
+platform.contextMenus.removeAll()
+
 var toggleIt
 
 export const gimmeToggle = toggleIn => {
