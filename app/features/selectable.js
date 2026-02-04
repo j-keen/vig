@@ -30,6 +30,7 @@ export function Selectable(visbug) {
   let labels              = []
   let handles             = []
   let draggables          = []  // 드래그 가능한 요소들 추적
+  let handlesHidden       = false
 
   const hover_state       = {
     target:   null,
@@ -63,6 +64,7 @@ export function Selectable(visbug) {
     hotkeys(`${metaKey}+z`, on_undo)
     hotkeys(`${metaKey}+shift+z`, on_redo)
     hotkeys(`${metaKey}+shift+s`, on_screenshot)
+    hotkeys('h', on_toggle_handles)
   }
 
   const unlisten = () => {
@@ -76,7 +78,7 @@ export function Selectable(visbug) {
     document.removeEventListener('cut', on_cut)
     document.removeEventListener('paste', on_paste)
 
-    hotkeys.unbind(`esc,${metaKey}+d,backspace,del,delete,alt+del,alt+backspace,${metaKey}+e,${metaKey}+shift+e,${metaKey}+g,${metaKey}+shift+g,tab,shift+tab,enter,shift+enter,${metaKey}+z,${metaKey}+shift+z,${metaKey}+shift+s`)
+    hotkeys.unbind(`esc,${metaKey}+d,backspace,del,delete,alt+del,alt+backspace,${metaKey}+e,${metaKey}+shift+e,${metaKey}+g,${metaKey}+shift+g,tab,shift+tab,enter,shift+enter,${metaKey}+z,${metaKey}+shift+z,${metaKey}+shift+s,h`)
   }
 
   const on_click = e => {
@@ -159,8 +161,15 @@ export function Selectable(visbug) {
     }
   }
 
-  const on_esc = _ =>
-    unselect_all()
+  const on_esc = _ => {
+    if (selected.length === 0) {
+      // 선택된 요소가 없으면 VisBug 닫기
+      const visbugEl = document.querySelector('vis-bug')
+      if (visbugEl) visbugEl.remove()
+    } else {
+      unselect_all()
+    }
+  }
 
   const on_duplicate = e => {
     const root_node = selected[0]
@@ -182,8 +191,22 @@ export function Selectable(visbug) {
   const on_undo = e => {
     e.preventDefault()
     const result = ChangeTracker.undo()
-    if (result) {
-      // 복원된 요소 선택
+    if (!result) return
+
+    if (result.type === 'deletion') {
+      // 삭제된 요소를 원래 위치에 다시 삽입
+      const { element, parent, nextSibling } = result
+      if (parent && parent.isConnected) {
+        if (nextSibling && nextSibling.parentNode === parent) {
+          parent.insertBefore(element, nextSibling)
+        } else {
+          parent.appendChild(element)
+        }
+        unselect_all({silent: true})
+        select(element)
+      }
+    } else {
+      // 스타일 변경 undo
       unselect_all({silent: true})
       select(result.element)
     }
@@ -192,8 +215,15 @@ export function Selectable(visbug) {
   const on_redo = e => {
     e.preventDefault()
     const result = ChangeTracker.redo()
-    if (result) {
-      // 다시 변경된 요소 선택
+    if (!result) return
+
+    if (result.type === 'deletion') {
+      // 요소를 다시 삭제
+      const { element } = result
+      unselect_all({silent: true})
+      element.remove()
+    } else {
+      // 스타일 변경 redo
       unselect_all({silent: true})
       select(result.element)
     }
@@ -202,6 +232,21 @@ export function Selectable(visbug) {
   const on_screenshot = e => {
     e.preventDefault()
     takeScreenshot()
+  }
+
+  const on_toggle_handles = e => {
+    e.preventDefault()
+    handlesHidden = !handlesHidden
+    handles.forEach(handle => {
+      if (handle) {
+        const handleShadow = handle.$shadow || handle.shadowRoot
+        if (handleShadow) {
+          handleShadow.querySelectorAll('visbug-handle').forEach(h => {
+            h.style.display = handlesHidden ? 'none' : null
+          })
+        }
+      }
+    })
   }
 
   const on_copy = async e => {
@@ -540,6 +585,7 @@ export function Selectable(visbug) {
     labels    = []
     handles   = []
     selected  = []
+    handlesHidden = false
 
     !silent && tellWatchers()
   }
@@ -622,6 +668,24 @@ export function Selectable(visbug) {
 
   const overlayMetaUI = ({el, id, no_label = true}) => {
     let handle = createHandle({el, id})
+
+    // 작은 요소 (30px 이하)는 핸들 자동 숨김
+    const rect = el.getBoundingClientRect()
+    if (rect.width <= 30 || rect.height <= 30) {
+      handlesHidden = true
+      if (handle) {
+        const handleShadow = handle.$shadow || handle.shadowRoot
+        if (handleShadow) {
+          // 렌더링 후 핸들 숨기기 위해 약간의 지연
+          requestAnimationFrame(() => {
+            handleShadow.querySelectorAll('visbug-handle').forEach(h => {
+              h.style.display = 'none'
+            })
+          })
+        }
+      }
+    }
+
     let label  = no_label
       ? null
       : createLabel({

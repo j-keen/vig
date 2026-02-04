@@ -44,6 +44,10 @@ export const VisBugModel = {
                       <b>원래대로:</b>
                       <span>${altKey} + delete</span>
                     </div>
+                    <div>
+                      <b>핸들 숨기기:</b>
+                      <span>H</span>
+                    </div>
                   </div>`,
   },
   m: {

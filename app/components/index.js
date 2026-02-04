@@ -8,6 +8,7 @@ export { Overlay }    from './selection/overlay.element'
 export { BoxModel }   from './selection/box-model.element'
 export { Corners }    from './selection/corners.element'
 export { Grip }       from './selection/grip.element'
+export { DepthHighlight } from './selection/depth-highlight.element'
 
 export { Metatip }    from './metatip/metatip.element'
 export { Ally }       from './metatip/ally.element'

@@ -10,7 +10,8 @@ import {
 import {
   Selectable, Moveable, Padding, Margin,
   Flex, Guides, Position, draggable,
-  AICopy, setupAICopyTooltip
+  AICopy, setupAICopyTooltip,
+  DepthSelector
 } from '../../features/'
 
 import {
@@ -55,9 +56,21 @@ export default class VisBug extends HTMLElement {
     // 안내선 항상 활성화 (배경 기능으로)
     this.guidesFeature = Guides(this.selectorEngine)
 
+    // 깊이별 요소 선택 (Alt+Wheel 배경 기능)
+    this.depthFeature = DepthSelector(this, this.selectorEngine)
+
     // 히스토리 패널 항상 표시
     this.historyPanel = document.createElement('visbug-history')
     document.body.appendChild(this.historyPanel)
+
+    // 히스토리 패널에서 요소 클릭 시 선택
+    this.historyPanel.addEventListener('select-element', (e) => {
+      const { element } = e.detail
+      if (element && element.isConnected) {
+        this.selectorEngine.unselect_all({silent: true})
+        this.selectorEngine.select(element)
+      }
+    })
 
     // 기본 도구: guides
     this.toolSelected($('[data-tool="guides"]', this.$shadow)[0])
@@ -66,6 +79,7 @@ export default class VisBug extends HTMLElement {
   disconnectedCallback() {
     this.deactivate_feature && this.deactivate_feature()
     this.guidesFeature && this.guidesFeature()
+    this.depthFeature && this.depthFeature()
     this.historyPanel && this.historyPanel.remove()
     this.cleanup()
     this.selectorEngine.disconnect()
@@ -93,9 +107,9 @@ export default class VisBug extends HTMLElement {
     const main_ol = this.$shadow.querySelector('ol')
     const buttonPieces = $('li[data-tool], li[data-tool] *', main_ol)
 
-    const clickEvent = (e) => {
-      const target = e.currentTarget || e.target
-      const toolButton = target.closest('[data-tool]')
+    const clickEvent = (e, clickSurface) => {
+      const target = clickSurface || e.target
+      const toolButton = target.closest ? target.closest('[data-tool]') : null
       if (toolButton) this.toolSelected(toolButton) && e.stopPropagation();
     }
 

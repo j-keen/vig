@@ -78,8 +78,17 @@ export const htmlStringToDom = (htmlString = "") =>
   (new DOMParser().parseFromString(htmlString, 'text/html'))
     .body.firstChild
 
-export const isOffBounds = node =>
-  node.closest && (
+export const isOffBounds = node => {
+  // Shadow DOM 내부 요소 체크: Shadow Root의 host가 VisBug 요소인지 확인
+  if (node.getRootNode) {
+    const root = node.getRootNode()
+    if (root !== document && root.host) {
+      const hostTag = root.host.nodeName.toLowerCase()
+      if (hostTag === 'vis-bug' || hostTag.startsWith('visbug-')) return true
+    }
+  }
+
+  return node.closest && (
        node.closest('vis-bug')
     || node.closest('hotkey-map')
     || node.closest('visbug-metatip')
@@ -90,7 +99,9 @@ export const isOffBounds = node =>
     || node.closest('visbug-grip')
     || node.closest('visbug-gridlines')
     || node.closest('visbug-history')
+    || node.closest('visbug-depth-highlight')
   )
+}
 
 export const isSelectorValid = (qs => (
   selector => {

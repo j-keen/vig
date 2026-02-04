@@ -16,6 +16,11 @@ export class Handles extends HTMLElement {
     this.setAttribute('popover', 'manual')
     this.showPopover && this.showPopover()
     window.addEventListener('resize', this.on_window_resize)
+
+    // Allow wheel events to pass through handles to enable scrolling
+    this.addEventListener('wheel', e => {
+      // Don't prevent default - let wheel events bubble to the page
+    }, { passive: true })
   }
 
   disconnectedCallback() {

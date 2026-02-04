@@ -148,6 +148,7 @@ export const HistoryPanelStyles = `
     font-weight: 500;
     margin-bottom: 4px;
     word-break: break-all;
+    cursor: pointer;
   }
 
   .history-item.deleted .history-name {

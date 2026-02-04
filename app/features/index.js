@@ -18,4 +18,5 @@ export { AICopy, trackPositionChange, updateTrackedPosition, setupAICopyTooltip 
 export { ChangeTracker } from './change-tracker'
 export { AIFormatter } from './ai-formatter'
 export { HumanFormatter } from './human-formatter'
+export { DepthSelector } from './depth-selector'
 

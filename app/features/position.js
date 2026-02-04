@@ -67,7 +67,7 @@ export function draggable({el, surface = el, cursor = 'move', clickEvent, getSib
     surface.style.cursor  = cursor
 
     surface.addEventListener('mousedown', onMouseDown, true)
-    surface.addEventListener('mouseup', onMouseUp, true)
+    document.addEventListener('mouseup', onMouseUp, true)
     document.addEventListener('mousemove', onMouseMove, true)
   }
 
@@ -76,13 +76,13 @@ export function draggable({el, surface = el, cursor = 'move', clickEvent, getSib
     surface.style.cursor  = null
 
     surface.removeEventListener('mousedown', onMouseDown, true)
-    surface.removeEventListener('mouseup', onMouseUp, true)
+    document.removeEventListener('mouseup', onMouseUp, true)
     document.removeEventListener('mousemove', onMouseMove, true)
   }
 
   const onMouseDown = e => {
     // 요소 자체 또는 자식 요소 클릭도 허용 (Shift+드래그 버그 수정)
-    if(!el.contains(e.target)) return
+    if(!el.contains(e.target) && !surface.contains(e.target)) return
     e.preventDefault()
 
     // 변경 추적: 원본 스타일 캡처
@@ -150,8 +150,7 @@ export function draggable({el, surface = el, cursor = 'move', clickEvent, getSib
   }
 
   const onMouseUp = e => {
-    // 요소 자체 또는 자식 요소 클릭도 허용
-    if(!el.contains(e.target)) return
+    if (!state.mouse.down) return
 
     e.preventDefault()
     e.stopPropagation()
@@ -186,7 +185,7 @@ export function draggable({el, surface = el, cursor = 'move', clickEvent, getSib
     }
 
     const treatAsClick = !state.travelDistance || state.travelDistance < 5
-    if (clickEvent && treatAsClick) clickEvent(e);
+    if (clickEvent && treatAsClick) clickEvent(e, surface);
     state.travelDistance = 0 // reset after
   }
 

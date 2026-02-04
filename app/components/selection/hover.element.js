@@ -10,6 +10,11 @@ export class Hover extends Handles {
 
   connectedCallback() {
     this.$shadow.adoptedStyleSheets = this.styles
+
+    // Allow wheel events to pass through hover overlay to enable scrolling
+    this.addEventListener('wheel', e => {
+      // Don't prevent default - let wheel events bubble to the page
+    }, { passive: true })
   }
 
   disconnectedCallback() {}

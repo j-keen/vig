@@ -160,8 +160,14 @@ export class HistoryPanel extends HTMLElement {
           const id = parseInt(item.dataset.elementId)
           text = AIFormatter.formatSingleForAI(id) || ''
         } else if (item.dataset.deletedIndex !== undefined) {
-          const nameEl = item.querySelector('.history-name')
-          text = nameEl ? nameEl.textContent + ' → [삭제됨]' : '[삭제됨]'
+          const index = parseInt(item.dataset.deletedIndex)
+          const deletedElements = ChangeTracker.getDeletedElements()
+          if (deletedElements[index]) {
+            text = AIFormatter.formatDeletedForAI(deletedElements[index])
+          } else {
+            const nameEl = item.querySelector('.history-name')
+            text = nameEl ? nameEl.textContent + ' → [삭제됨]' : '[삭제됨]'
+          }
         } else if (item.dataset.screenshotId) {
           const nameEl = item.querySelector('.history-name')
           const detailEl = item.querySelector('.history-detail')
@@ -200,6 +206,37 @@ export class HistoryPanel extends HTMLElement {
         this.updateContent()
       }
     })
+
+    // 히스토리 항목 클릭 시 해당 요소 선택
+    this.$shadow.querySelector('.content').addEventListener('click', (e) => {
+      // 버튼 클릭은 무시 (복사/삭제 버튼)
+      if (e.target.classList.contains('btn-copy') || e.target.classList.contains('btn-delete')) return
+
+      const item = e.target.closest('.history-item')
+      if (!item) return
+
+      // 변경된 요소 선택
+      if (item.dataset.elementId) {
+        const id = parseInt(item.dataset.elementId)
+        // ChangeTracker에서 해당 요소 찾기
+        const allChanges = ChangeTracker.getAllChanges()
+        for (const [element] of allChanges) {
+          if (ChangeTracker.getElementId(element) === id) {
+            // 요소가 DOM에 있는지 확인
+            if (element.isConnected) {
+              this.dispatchEvent(new CustomEvent('select-element', {
+                detail: { element },
+                bubbles: true,
+                composed: true
+              }))
+              // 요소로 스크롤
+              element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            }
+            break
+          }
+        }
+      }
+    }, true)
   }
 
   toggleCompareMode() {

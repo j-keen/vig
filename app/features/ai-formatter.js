@@ -57,6 +57,50 @@ function getTextContent(element) {
   return text.length > 20 ? text.slice(0, 20) + '...' : text
 }
 
+// 고유 CSS 선택자 경로 생성
+export function getCSSSelector(element) {
+  const parts = []
+  let current = element
+
+  while (current && current !== document.body && current !== document.documentElement) {
+    let selector = current.tagName.toLowerCase()
+
+    if (current.id) {
+      selector = `#${current.id}`
+      parts.unshift(selector)
+      break // id is unique, stop here
+    }
+
+    // Add class if available (first meaningful class)
+    if (current.className && typeof current.className === 'string') {
+      const classes = current.className.trim().split(/\s+/)
+      const meaningful = classes.find(c =>
+        !['flex', 'hidden', 'block', 'relative', 'absolute', 'inline-flex'].includes(c)
+      )
+      if (meaningful) {
+        selector += `.${meaningful}`
+      }
+    }
+
+    // Add nth-child if needed for uniqueness
+    const parent = current.parentElement
+    if (parent) {
+      const siblings = Array.from(parent.children).filter(
+        el => el.tagName === current.tagName
+      )
+      if (siblings.length > 1) {
+        const index = siblings.indexOf(current) + 1
+        selector += `:nth-child(${index})`
+      }
+    }
+
+    parts.unshift(selector)
+    current = current.parentElement
+  }
+
+  return parts.join(' > ')
+}
+
 // 요소 식별자 생성 (우선순위: id > 텍스트 > 아이콘 > data-testid > 태그.클래스)
 export function getIdentifier(element) {
   // 1. id 우선
@@ -118,8 +162,14 @@ function formatChanges(changes) {
 // 단일 요소를 AI 포맷으로 변환
 export function formatElementForAI(element, changes) {
   const identifier = getIdentifier(element)
+  const selector = getCSSSelector(element)
   const css = formatChanges(changes)
-  return `${identifier} → ${css}`
+  return `${identifier} (${selector}) → ${css}`
+}
+
+// 삭제된 요소를 AI 포맷으로 변환
+export function formatDeletedForAI(deleted) {
+  return `${deleted.identifier} → [삭제됨]`
 }
 
 // 모든 변경사항을 AI 포맷으로 변환
@@ -129,6 +179,12 @@ export function formatAllForAI() {
 
   allChanges.forEach((changes, element) => {
     lines.push(formatElementForAI(element, changes))
+  })
+
+  // 삭제된 요소들도 포함
+  const deletedElements = ChangeTracker.getDeletedElements()
+  deletedElements.forEach(deleted => {
+    lines.push(formatDeletedForAI(deleted))
   })
 
   return lines.join('\n')
@@ -191,7 +247,9 @@ export async function copyAllChangesForAI() {
 
 export const AIFormatter = {
   getIdentifier,
+  getCSSSelector,
   formatElementForAI,
+  formatDeletedForAI,
   formatSingleForAI,
   formatAllForAI,
   copyToClipboard,

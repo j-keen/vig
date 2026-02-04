@@ -52,6 +52,32 @@ export class Handle extends HTMLElement {
     const initialWidth = parseFloat(initialStyle.width)
     const initialHeight = parseFloat(initialStyle.height)
     const initialTransform = new DOMMatrix(initialStyle.transform)
+    const initialDiagonal = Math.sqrt(initialWidth ** 2 + initialHeight ** 2)
+
+    // Shift+드래그: scale 모드 (하위 요소 포함 비율 조정)
+    const useScaleMode = e.shiftKey
+
+    // flex/grid 자식 요소의 크기 제약 해제 (일반 모드에서만)
+    if (!useScaleMode) {
+      const parentDisplay = sourceEl.parentElement
+        ? getComputedStyle(sourceEl.parentElement).display
+        : ''
+      const isFlex = parentDisplay.includes('flex')
+      const isGrid = parentDisplay.includes('grid')
+
+      if (isFlex) {
+        sourceEl.style.flexGrow = '0'
+        sourceEl.style.flexShrink = '0'
+        sourceEl.style.flexBasis = 'auto'
+      }
+
+      if (isFlex || isGrid) {
+        sourceEl.style.minWidth = '0'
+        sourceEl.style.maxWidth = 'none'
+        sourceEl.style.minHeight = '0'
+        sourceEl.style.maxHeight = 'none'
+      }
+    }
 
     const originalElTransition = sourceEl.style.transition
     const originalDocumentCursor = document.body.style.cursor
@@ -71,6 +97,72 @@ export class Handle extends HTMLElement {
     
       const diffX = newX - initialX
       const diffY = newY - initialY
+
+      // Scale 모드: transform scale로 하위 요소 포함 비율 유지 크기 조정
+      if (useScaleMode) {
+        let scaleX, scaleY, originX, originY
+
+        switch (placement) {
+          case 'top-start':
+            scaleX = (initialWidth - diffX) / initialWidth
+            scaleY = (initialHeight - diffY) / initialHeight
+            originX = '100%'; originY = '100%'
+            break
+          case 'top-center':
+            scaleX = 1
+            scaleY = (initialHeight - diffY) / initialHeight
+            originX = '50%'; originY = '100%'
+            break
+          case 'top-end':
+            scaleX = (initialWidth + diffX) / initialWidth
+            scaleY = (initialHeight - diffY) / initialHeight
+            originX = '0%'; originY = '100%'
+            break
+          case 'middle-start':
+            scaleX = (initialWidth - diffX) / initialWidth
+            scaleY = 1
+            originX = '100%'; originY = '50%'
+            break
+          case 'middle-end':
+            scaleX = (initialWidth + diffX) / initialWidth
+            scaleY = 1
+            originX = '0%'; originY = '50%'
+            break
+          case 'bottom-start':
+            scaleX = (initialWidth - diffX) / initialWidth
+            scaleY = (initialHeight + diffY) / initialHeight
+            originX = '100%'; originY = '0%'
+            break
+          case 'bottom-center':
+            scaleX = 1
+            scaleY = (initialHeight + diffY) / initialHeight
+            originX = '50%'; originY = '0%'
+            break
+          case 'bottom-end':
+            scaleX = (initialWidth + diffX) / initialWidth
+            scaleY = (initialHeight + diffY) / initialHeight
+            originX = '0%'; originY = '0%'
+            break
+        }
+
+        // 코너 핸들: 대각선 거리 기반 균일 스케일 (비율 유지)
+        const isCorner = !placement.includes('middle') && !placement.includes('center')
+        if (isCorner) {
+          const newDiag = Math.sqrt((initialWidth * scaleX) ** 2 + (initialHeight * scaleY) ** 2)
+          const uniformScale = newDiag / initialDiagonal
+          scaleX = uniformScale
+          scaleY = uniformScale
+        }
+
+        scaleX = Math.max(0.1, scaleX)
+        scaleY = Math.max(0.1, scaleY)
+
+        requestAnimationFrame(() => {
+          sourceEl.style.transformOrigin = `${originX} ${originY}`
+          sourceEl.style.transform = `scale(${scaleX}, ${scaleY})`
+        })
+        return
+      }
 
       switch (placement) {
         case 'top-start': {
