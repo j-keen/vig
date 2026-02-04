@@ -1,13 +1,13 @@
 {
-  "name": "VisBug",
-  "version": "0.4.9",
-  "description": "",
-  "author": "Adam Argyle",
+  "name": "DesignPoke",
+  "version": "1.0.0",
+  "description": "웹페이지 디자인을 드래그로 조정하고 AI에게 전달할 수 있는 도구",
+  "author": "j-keen",
   "license": "Apache-2.0",
   "main": "app/components/vis-bug/vis-bug.element.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/GoogleChromeLabs/ProjectVisBug.git"
+    "url": "https://github.com/j-keen/vig.git"
   },
   "scripts": {
     "start": "npm run concurrent",
@@ -28,7 +28,7 @@
     "extension:js": "npm run bundle:prod",
     "extension:css": "postcss app/extension.css -o extension/toolbar/bundle.css",
     "extension:copy": "cp app/bundle.min.js extension/toolbar/ && cp -R app/tuts/ extension/tuts",
-    "extension:zip": "rm -rf ./extension/build/* && mkdir ./visbug_v$npm_package_version && cp -R ./extension/* ./visbug_v$npm_package_version/ && zip -r ./extension/build/visbug.zip ./visbug_v$npm_package_version/ && rm -rf ./visbug_v$npm_package_version",
+    "extension:zip": "rm -rf ./extension/build/* && mkdir ./designpoke_v$npm_package_version && cp -R ./extension/* ./designpoke_v$npm_package_version/ && zip -r ./extension/build/designpoke.zip ./designpoke_v$npm_package_version/ && rm -rf ./designpoke_v$npm_package_version",
     "extension:firefox": "npm run dev:extension && cd extension && web-ext run",
     "extension:firefox-build": "npm run extension:build && cd extension && web-ext build",
     "deploy": "gcloud app deploy --project=visbug-1337",

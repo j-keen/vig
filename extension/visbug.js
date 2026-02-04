@@ -73,7 +73,7 @@ platform.runtime.onMessage.addListener((request, sender, sendResponse) => {
       }
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-      const filename = `visbug-screenshot-${timestamp}.png`
+      const filename = `designpoke-screenshot-${timestamp}.png`
 
       platform.downloads.download({
         url: screenshotUrl,
