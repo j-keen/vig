@@ -123,6 +123,7 @@ export function formatAllAsHTML() {
       const elementId = ChangeTracker.getElementId(element)
       htmlParts.push(`
         <div class="history-item" data-element-id="${elementId}">
+          <button class="btn-copy" title="복사">⎘</button>
           <button class="btn-delete" title="삭제">×</button>
           <div class="history-name">${escapeHtml(formatted.name)}</div>
           ${formatted.lines.map(line => `<div class="history-detail">${escapeHtml(line)}</div>`).join('')}
@@ -137,6 +138,7 @@ export function formatAllAsHTML() {
     const formatted = formatDeletedElement(deleted)
     htmlParts.push(`
       <div class="history-item deleted" data-deleted-index="${index}">
+        <button class="btn-copy" title="복사">⎘</button>
         <button class="btn-delete" title="삭제">×</button>
         <div class="history-name">${escapeHtml(formatted.name)}</div>
         ${formatted.lines.map(line => `<div class="history-detail">${escapeHtml(line)}</div>`).join('')}
@@ -150,6 +152,7 @@ export function formatAllAsHTML() {
     const formatted = formatScreenshot(screenshot)
     htmlParts.push(`
       <div class="history-item screenshot" data-screenshot-id="${screenshot.id}">
+        <button class="btn-copy" title="복사">⎘</button>
         <button class="btn-delete" title="삭제">×</button>
         <div class="history-name">${escapeHtml(formatted.name)}</div>
         ${formatted.lines.map(line => `<div class="history-detail">${escapeHtml(line)}</div>`).join('')}

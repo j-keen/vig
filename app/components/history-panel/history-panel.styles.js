@@ -212,6 +212,57 @@ export const HistoryPanelStyles = `
     font-weight: 500;
     min-width: 100px;
   }
+
+  .btn-copy {
+    position: absolute;
+    top: 4px;
+    right: 24px;
+    background: transparent;
+    border: none;
+    color: hsl(0 0% 40%);
+    cursor: pointer;
+    width: 18px;
+    height: 18px;
+    font-size: 12px;
+    line-height: 1;
+    border-radius: 3px;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+
+  .history-item:hover .btn-copy {
+    opacity: 1;
+  }
+
+  .btn-copy:hover {
+    background: hsl(200 60% 40%);
+    color: hsl(0 0% 100%);
+  }
+
+  .btn-copy-all {
+    font-size: 12px;
+  }
+
+  .copy-notification {
+    position: absolute;
+    bottom: 8px;
+    left: 50%;
+    transform: translateX(-50%) translateY(10px);
+    background: hsl(140 60% 35%);
+    color: white;
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: 11px;
+    opacity: 0;
+    transition: opacity 0.2s, transform 0.2s;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+
+  .copy-notification.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
 `
 
 export default HistoryPanelStyles

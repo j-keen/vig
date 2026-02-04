@@ -4,6 +4,7 @@
 import { HumanFormatter } from '../../features/human-formatter'
 import { ChangeTracker } from '../../features/change-tracker'
 import { HistoryPanelStyles } from './history-panel.styles'
+import { AIFormatter } from '../../features/ai-formatter'
 
 export class HistoryPanel extends HTMLElement {
   constructor() {
@@ -53,6 +54,7 @@ export class HistoryPanel extends HTMLElement {
         <div class="header">
           <span class="title">변경 내역 (<span class="count">0</span>개)</span>
           <div class="buttons">
+            <button class="btn-copy-all" title="전체 복사">📋</button>
             <button class="btn-compare" title="원본/변경 비교">⇄</button>
             <button class="btn-help" title="도움말">?</button>
             <button class="btn-minimize" title="최소화">_</button>
@@ -137,8 +139,43 @@ export class HistoryPanel extends HTMLElement {
       this.toggleHelp()
     })
 
+    // 전체 복사 버튼
+    const btnCopyAll = this.$shadow.querySelector('.btn-copy-all')
+    btnCopyAll.addEventListener('click', async () => {
+      const result = await AIFormatter.copyAllChangesForAI()
+      if (result.success) {
+        this.showCopyNotification('전체 복사 완료')
+      }
+    })
+
     // 삭제 버튼 이벤트 위임
-    this.$shadow.querySelector('.content').addEventListener('click', (e) => {
+    this.$shadow.querySelector('.content').addEventListener('click', async (e) => {
+      // 개별 복사 버튼
+      if (e.target.classList.contains('btn-copy')) {
+        const item = e.target.closest('.history-item')
+        if (!item) return
+
+        let text = ''
+        if (item.dataset.elementId) {
+          const id = parseInt(item.dataset.elementId)
+          text = AIFormatter.formatSingleForAI(id) || ''
+        } else if (item.dataset.deletedIndex !== undefined) {
+          const nameEl = item.querySelector('.history-name')
+          text = nameEl ? nameEl.textContent + ' → [삭제됨]' : '[삭제됨]'
+        } else if (item.dataset.screenshotId) {
+          const nameEl = item.querySelector('.history-name')
+          const detailEl = item.querySelector('.history-detail')
+          text = nameEl ? nameEl.textContent : ''
+          if (detailEl) text += '\n' + detailEl.textContent
+        }
+
+        if (text) {
+          await AIFormatter.copyToClipboard(text)
+          this.showCopyNotification('복사 완료')
+        }
+        return
+      }
+
       if (e.target.classList.contains('btn-delete')) {
         const item = e.target.closest('.history-item')
         if (!item) return
@@ -202,6 +239,20 @@ export class HistoryPanel extends HTMLElement {
       helpContent.style.display = 'none'
       btnHelp.classList.remove('active')
     }
+  }
+
+  showCopyNotification(message) {
+    let notification = this.$shadow.querySelector('.copy-notification')
+    if (!notification) {
+      notification = document.createElement('div')
+      notification.className = 'copy-notification'
+      this.$shadow.querySelector('.panel').appendChild(notification)
+    }
+    notification.textContent = message
+    notification.classList.add('show')
+    setTimeout(() => {
+      notification.classList.remove('show')
+    }, 1500)
   }
 
   toggleMinimize() {

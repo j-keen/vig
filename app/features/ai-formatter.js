@@ -160,6 +160,17 @@ export async function copyToClipboard(text) {
   }
 }
 
+// ID로 단일 요소의 변경사항을 포맷
+export function formatSingleForAI(elementId) {
+  const allChanges = ChangeTracker.getAllChanges()
+  for (const [element, changes] of allChanges) {
+    if (ChangeTracker.getElementId(element) === elementId) {
+      return formatElementForAI(element, changes)
+    }
+  }
+  return null
+}
+
 // 모든 변경사항을 클립보드에 복사
 export async function copyAllChangesForAI() {
   const formatted = formatAllForAI()
@@ -181,6 +192,7 @@ export async function copyAllChangesForAI() {
 export const AIFormatter = {
   getIdentifier,
   formatElementForAI,
+  formatSingleForAI,
   formatAllForAI,
   copyToClipboard,
   copyAllChangesForAI,
