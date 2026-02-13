@@ -5,6 +5,7 @@ import { HumanFormatter } from '../../features/human-formatter'
 import { ChangeTracker } from '../../features/change-tracker'
 import { HistoryPanelStyles } from './history-panel.styles'
 import { AIFormatter } from '../../features/ai-formatter'
+import { copyScreenshotImage, copyScreenshotPath } from '../../features/screenshot'
 
 export class HistoryPanel extends HTMLElement {
   constructor() {
@@ -150,7 +151,43 @@ export class HistoryPanel extends HTMLElement {
 
     // 삭제 버튼 이벤트 위임
     this.$shadow.querySelector('.content').addEventListener('click', async (e) => {
-      // 개별 복사 버튼
+      // 스크린샷 이미지 복사 버튼
+      if (e.target.classList.contains('btn-copy-image')) {
+        const item = e.target.closest('.history-item')
+        if (!item || !item.dataset.screenshotId) return
+
+        const id = parseInt(item.dataset.screenshotId)
+        const screenshots = ChangeTracker.getScreenshots()
+        const screenshot = screenshots.find(s => s.id === id)
+
+        if (screenshot?.dataUrl) {
+          const result = await copyScreenshotImage(screenshot.dataUrl)
+          this.showCopyNotification(result.success ? '이미지 복사 완료' : result.message)
+        } else {
+          this.showCopyNotification('이미지 데이터 없음')
+        }
+        return
+      }
+
+      // 스크린샷 경로 복사 버튼
+      if (e.target.classList.contains('btn-copy-path')) {
+        const item = e.target.closest('.history-item')
+        if (!item || !item.dataset.screenshotId) return
+
+        const id = parseInt(item.dataset.screenshotId)
+        const screenshots = ChangeTracker.getScreenshots()
+        const screenshot = screenshots.find(s => s.id === id)
+
+        if (screenshot?.path) {
+          const result = await copyScreenshotPath(screenshot.path)
+          this.showCopyNotification(result.success ? '경로 복사 완료' : result.message)
+        } else {
+          this.showCopyNotification('경로 정보 없음')
+        }
+        return
+      }
+
+      // 개별 복사 버튼 (변경/삭제 항목)
       if (e.target.classList.contains('btn-copy')) {
         const item = e.target.closest('.history-item')
         if (!item) return
@@ -168,11 +205,6 @@ export class HistoryPanel extends HTMLElement {
             const nameEl = item.querySelector('.history-name')
             text = nameEl ? nameEl.textContent + ' → [삭제됨]' : '[삭제됨]'
           }
-        } else if (item.dataset.screenshotId) {
-          const nameEl = item.querySelector('.history-name')
-          const detailEl = item.querySelector('.history-detail')
-          text = nameEl ? nameEl.textContent : ''
-          if (detailEl) text += '\n' + detailEl.textContent
         }
 
         if (text) {
