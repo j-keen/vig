@@ -240,6 +240,47 @@ export const HistoryPanelStyles = `
     color: hsl(0 0% 100%);
   }
 
+  .screenshot-buttons {
+    position: absolute;
+    top: 4px;
+    right: 24px;
+    display: flex;
+    gap: 2px;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+
+  .history-item:hover .screenshot-buttons {
+    opacity: 1;
+  }
+
+  .btn-copy-image,
+  .btn-copy-path {
+    background: transparent;
+    border: none;
+    color: hsl(0 0% 40%);
+    cursor: pointer;
+    width: 18px;
+    height: 18px;
+    font-size: 11px;
+    line-height: 1;
+    border-radius: 3px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .btn-copy-image:hover {
+    background: hsl(200 60% 40%);
+    color: hsl(0 0% 100%);
+  }
+
+  .btn-copy-path:hover {
+    background: hsl(30 60% 40%);
+    color: hsl(0 0% 100%);
+  }
+
   .btn-copy-all {
     font-size: 12px;
   }

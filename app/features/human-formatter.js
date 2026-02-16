@@ -150,9 +150,15 @@ export function formatAllAsHTML() {
   const screenshots = ChangeTracker.getScreenshots()
   screenshots.forEach(screenshot => {
     const formatted = formatScreenshot(screenshot)
+    const hasImage = !!screenshot.dataUrl
+    const hasPath = !!screenshot.path
+
     htmlParts.push(`
       <div class="history-item screenshot" data-screenshot-id="${screenshot.id}">
-        <button class="btn-copy" title="복사">⎘</button>
+        <div class="screenshot-buttons">
+          ${hasImage ? '<button class="btn-copy-image" title="이미지 복사">🖼</button>' : ''}
+          ${hasPath ? '<button class="btn-copy-path" title="경로 복사">📂</button>' : ''}
+        </div>
         <button class="btn-delete" title="삭제">×</button>
         <div class="history-name">${escapeHtml(formatted.name)}</div>
         ${formatted.lines.map(line => `<div class="history-detail">${escapeHtml(line)}</div>`).join('')}

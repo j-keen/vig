@@ -75,6 +75,16 @@ platform.runtime.onMessage.addListener((request, sender, sendResponse) => {
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
       const filename = `designpoke-screenshot-${timestamp}.png`
 
+      // 저장 없이 캡처만 요청한 경우
+      if (request.captureOnly) {
+        sendResponse({
+          success: true,
+          dataUrl: screenshotUrl,
+          filename: filename
+        })
+        return
+      }
+
       platform.downloads.download({
         url: screenshotUrl,
         filename: filename,
@@ -96,7 +106,8 @@ platform.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 sendResponse({
                   success: true,
                   path: results[0].filename,
-                  filename: filename
+                  filename: filename,
+                  dataUrl: screenshotUrl
                 })
               }
             })

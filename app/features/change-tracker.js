@@ -391,12 +391,18 @@ export function removeScreenshotById(id) {
   return false
 }
 
+// 요소의 원본 스타일 가져오기
+export function getOriginalStyles(element) {
+  return originalStyles.get(element) || null
+}
+
 // Export the tracker as a singleton object
 export const ChangeTracker = {
   captureOriginal,
   updateCurrent,
   getChanges,
   getAllChanges,
+  getOriginalStyles,
   removeElement,
   trackDeletion,
   getDeletedElements,
