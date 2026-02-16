@@ -52,7 +52,10 @@ function formatDelta(originalValue, currentValue) {
   if (origNum !== null && currNum !== null) {
     const delta = currNum - origNum
     const sign = delta >= 0 ? '+' : ''
-    return `${sign}${delta}px`
+    // Round to 2 decimal places and remove trailing zeros
+    const roundedDelta = Math.round(delta * 100) / 100
+    const formatted = roundedDelta % 1 === 0 ? roundedDelta.toFixed(0) : roundedDelta.toString()
+    return `${sign}${formatted}px`
   }
   return null
 }
@@ -246,8 +249,20 @@ export function formatElementForAI(element, changes, index) {
 
   lines.push(`- 변경 내용:`)
 
+  const positionProps = ['left', 'top', 'right', 'bottom']
+  const hasPositionChange = 'position' in changes
+
   Object.entries(changes).forEach(([prop, currentValue]) => {
     const originalValue = original ? original[prop] : null
+
+    // Skip implicit auto→0px changes when position is changed
+    if (hasPositionChange &&
+        positionProps.includes(prop) &&
+        originalValue === 'auto' &&
+        currentValue === '0px') {
+      return
+    }
+
     const kebab = toKebabCase(prop)
     const delta = formatDelta(originalValue, currentValue)
     const description = describeChange(prop, originalValue, currentValue)

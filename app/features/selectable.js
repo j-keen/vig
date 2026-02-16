@@ -63,7 +63,7 @@ export function Selectable(visbug) {
     hotkeys(`shift+'`, on_select_parent)
     hotkeys(`${metaKey}+z`, on_undo)
     hotkeys(`${metaKey}+shift+z`, on_redo)
-    hotkeys(`${metaKey}+shift+s`, on_screenshot)
+    hotkeys('alt+s', on_screenshot)
     hotkeys('h', on_toggle_handles)
   }
 
@@ -78,7 +78,7 @@ export function Selectable(visbug) {
     document.removeEventListener('cut', on_cut)
     document.removeEventListener('paste', on_paste)
 
-    hotkeys.unbind(`esc,${metaKey}+d,backspace,del,delete,alt+del,alt+backspace,${metaKey}+e,${metaKey}+shift+e,${metaKey}+g,${metaKey}+shift+g,tab,shift+tab,enter,shift+enter,${metaKey}+z,${metaKey}+shift+z,${metaKey}+shift+s,h`)
+    hotkeys.unbind(`esc,${metaKey}+d,backspace,del,delete,alt+del,alt+backspace,${metaKey}+e,${metaKey}+shift+e,${metaKey}+g,${metaKey}+shift+g,tab,shift+tab,enter,shift+enter,${metaKey}+z,${metaKey}+shift+z,alt+s,h`)
   }
 
   const on_click = e => {

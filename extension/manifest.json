@@ -18,7 +18,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "클릭하거나 Ctrl+Shift+V를 눌러 DesignPoke 실행",
+    "default_title": "클릭하거나 Ctrl+Shift+D를 눌러 DesignPoke 실행",
     "default_icon": {
       "128": "icons/designpoke.png"
     }
@@ -33,10 +33,10 @@
   "commands": {
     "_execute_action": {
       "suggested_key": {
-        "windows": "Ctrl+Shift+V",
-        "mac": "Command+Shift+V",
-        "chromeos": "Ctrl+Shift+V",
-        "linux": "Ctrl+Shift+V"
+        "windows": "Ctrl+Shift+D",
+        "mac": "Command+Shift+D",
+        "chromeos": "Ctrl+Shift+D",
+        "linux": "Ctrl+Shift+D"
       }
     }
   }
