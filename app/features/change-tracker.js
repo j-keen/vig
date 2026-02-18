@@ -422,4 +422,9 @@ export const ChangeTracker = {
   removeScreenshotById,
 }
 
+// Expose to window for E2E testing
+if (typeof window !== 'undefined') {
+  window.ChangeTracker = ChangeTracker
+}
+
 export default ChangeTracker
