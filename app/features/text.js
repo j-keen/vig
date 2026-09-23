@@ -1,8 +1,10 @@
 import $ from 'blingblingjs'
 import hotkeys from 'hotkeys-js'
 import { showHideNodeLabel } from '../utilities/'
+import { ChangeTracker } from './change-tracker'
 
 const removeEditability = ({target}) => {
+  ChangeTracker.updateCurrentText(target)
   target.removeAttribute('contenteditable')
   target.removeAttribute('spellcheck')
   target.removeEventListener('blur', removeEditability)
@@ -22,6 +24,8 @@ export function EditText(elements) {
 
   elements.map(el => {
     let $el = $(el)
+
+    ChangeTracker.captureOriginalText(el)
 
     $el.attr({
       contenteditable: true,

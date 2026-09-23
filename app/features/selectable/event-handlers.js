@@ -8,9 +8,6 @@ import { ChangeTracker } from '../change-tracker'
 import { AIFormatter } from '../ai-formatter'
 import { takeScreenshot } from '../screenshot'
 
-import { showTip as showMetaTip, removeAll as removeAllMetaTips } from '../metatip'
-import { showTip as showAccessibilityTip, removeAll as removeAllAccessibilityTips } from '../accessibility'
-
 import {
   metaKey,
   isOffBounds, deepElementFromPoint,
@@ -62,7 +59,7 @@ export function createEventHandlers({
     hotkeys(`${metaKey}+z`, on_undo)
     hotkeys(`${metaKey}+shift+z`, on_redo)
     hotkeys('alt+s', on_screenshot)
-    hotkeys('h', on_toggle_handles)
+    hotkeys('shift+h', on_toggle_handles)
   }
 
   const unlisten = () => {
@@ -76,7 +73,7 @@ export function createEventHandlers({
     document.removeEventListener('cut', on_cut)
     document.removeEventListener('paste', on_paste)
 
-    hotkeys.unbind(`esc,${metaKey}+d,backspace,del,delete,alt+del,alt+backspace,${metaKey}+e,${metaKey}+shift+e,${metaKey}+g,${metaKey}+shift+g,tab,shift+tab,enter,shift+enter,${metaKey}+z,${metaKey}+shift+z,alt+s,h`)
+    hotkeys.unbind(`esc,${metaKey}+d,backspace,del,delete,alt+del,alt+backspace,${metaKey}+e,${metaKey}+shift+e,${metaKey}+g,${metaKey}+shift+g,tab,shift+tab,enter,shift+enter,${metaKey}+z,${metaKey}+shift+z,alt+s,shift+h`)
   }
 
   const on_click = e => {
@@ -156,8 +153,16 @@ export function createEventHandlers({
     e.preventDefault()
   }
 
-  const on_delete = e =>
-    getSelected().length && delete_all()
+  let deleting = false
+  const on_delete = e => {
+    if (deleting || !getSelected().length) return
+    deleting = true
+    try {
+      delete_all()
+    } finally {
+      deleting = false
+    }
+  }
 
   const on_clearstyles = e =>
     getSelected().forEach(el =>
@@ -319,31 +324,7 @@ export function createEventHandlers({
     }
   }
 
-  const show_tip = el => {
-    const active_tool = visbug.activeTool
-    let tipFactory
-
-    if (active_tool === 'accessibility') {
-      removeAllAccessibilityTips()
-      tipFactory = showAccessibilityTip
-    }
-    else if (active_tool === 'inspector') {
-      removeAllMetaTips()
-      tipFactory = showMetaTip
-    }
-
-    if (!tipFactory) return
-
-    const {top, left} = el.getBoundingClientRect()
-    const { pageYOffset, pageXOffset } = window
-
-    tipFactory(el, {
-      clientY:  top,
-      clientX:  left,
-      pageY:    pageYOffset + top - 10,
-      pageX:    pageXOffset + left + 20,
-    })
-  }
+  const show_tip = () => {}
 
   const on_hover = e => {
     const $target = deepElementFromPoint(e.clientX, e.clientY)
@@ -360,10 +341,8 @@ export function createEventHandlers({
       // no_hover: tool === 'guides',
       no_label:
            (tool === 'guides'
-        || tool === 'accessibility'
         || tool === 'margin'
-        || tool === 'padding'
-        || tool === 'inspector'),
+        || tool === 'padding'),
     })
 
     const hover_state = getHoverState()

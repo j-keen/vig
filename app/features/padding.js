@@ -35,7 +35,7 @@ export function Padding(visbug) {
   }
 }
 
-export function padElement(els, direction) {
+export function padElement(els, direction, commit = true) {
   els
     .map(el => showHideSelected(el))
     .map(el => {
@@ -60,6 +60,7 @@ export function padElement(els, direction) {
       el.style[style] = `${padding < 0 ? 0 : padding}px`
       // 변경 추적: 현재 스타일 업데이트
       ChangeTracker.updateCurrent(el)
+      if (commit) ChangeTracker.pushToUndoStack(el)
     })
 }
 
@@ -71,7 +72,9 @@ export function padAllElementSides(els, keycommand) {
   if (combo.includes('down'))   spoof = 'alt+' + spoof
 
   'up,down,left,right'.split(',')
-    .forEach(side => padElement(els, spoof + side))
+    .forEach(side => padElement(els, spoof + side, false))
+
+  els.forEach(el => ChangeTracker.pushToUndoStack(el))
 }
 
 function paintBackgrounds(els) {

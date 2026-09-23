@@ -1,16 +1,97 @@
 // 변경 추적 시스템 - 처음 ↔ 마지막만 저장 (중간값 무시)
 // Change Tracker - stores only initial and final states
 
-const trackedProperties = [
+export const trackedProperties = [
   'position', 'left', 'top', 'right', 'bottom',
-  'width', 'height', 'margin', 'padding',
+  'width', 'height',
   'marginTop', 'marginRight', 'marginBottom', 'marginLeft',
   'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
   'transform',
   'flexGrow', 'flexShrink', 'flexBasis',
   'minWidth', 'maxWidth', 'minHeight', 'maxHeight',
   'transformOrigin',
+  'color', 'backgroundColor', 'borderColor',
+  'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'textAlign',
+  'borderRadius', 'opacity',
 ]
+
+export const COLOR_PROPERTIES = ['color', 'backgroundColor', 'borderColor']
+
+function parseColorChannel(token) {
+  if (token == null) return NaN
+  const t = String(token).trim()
+  if (t.endsWith('%')) return (parseFloat(t) / 100) * 255
+  return parseFloat(t)
+}
+
+function parseAlpha(token) {
+  if (token == null || token === '') return 1
+  const t = String(token).trim()
+  if (t.endsWith('%')) return parseFloat(t) / 100
+  return parseFloat(t)
+}
+
+function toHexByte(n) {
+  return Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0')
+}
+
+// computed rgb()/rgba() → #rrggbb or #rrggbbaa. Other values pass through.
+export function cssColorToHex(value) {
+  if (value == null || typeof value !== 'string') return value
+  const raw = value.trim()
+  if (!raw) return value
+
+  if (raw.charAt(0) === '#') {
+    if (raw.length === 4 || raw.length === 5) {
+      const r = raw[1], g = raw[2], b = raw[3], a = raw[4]
+      return (`#${r}${r}${g}${g}${b}${b}${a ? a + a : ''}`).toLowerCase()
+    }
+    return raw.toLowerCase()
+  }
+
+  const lower = raw.toLowerCase()
+  if (lower === 'transparent') return '#00000000'
+
+  const rgbMatch = lower.match(/^rgba?\(\s*([\s\S]+)\s*\)$/)
+  if (!rgbMatch) return value
+
+  const body = rgbMatch[1].trim()
+  let r, g, b, a = 1
+
+  if (body.includes('/')) {
+    const parts = body.split('/')
+    const nums = parts[0].trim().split(/[\s,]+/).filter(Boolean)
+    r = parseColorChannel(nums[0])
+    g = parseColorChannel(nums[1])
+    b = parseColorChannel(nums[2])
+    a = parseAlpha(parts[1])
+  } else if (body.includes(',')) {
+    const nums = body.split(',').map(s => s.trim())
+    r = parseColorChannel(nums[0])
+    g = parseColorChannel(nums[1])
+    b = parseColorChannel(nums[2])
+    if (nums[3] != null) a = parseAlpha(nums[3])
+  } else {
+    const nums = body.split(/\s+/).filter(Boolean)
+    r = parseColorChannel(nums[0])
+    g = parseColorChannel(nums[1])
+    b = parseColorChannel(nums[2])
+    if (nums[3] != null) a = parseAlpha(nums[3])
+  }
+
+  if ([r, g, b].some(n => Number.isNaN(n))) return value
+  if (!(a >= 0) || Number.isNaN(a)) a = 1
+
+  const rgbHex = `#${toHexByte(r)}${toHexByte(g)}${toHexByte(b)}`
+  if (a >= 1) return rgbHex
+  return rgbHex + toHexByte(a * 255)
+}
+
+export function formatTrackedValue(prop, value) {
+  if (value == null) return value
+  if (COLOR_PROPERTIES.indexOf(prop) !== -1) return cssColorToHex(value)
+  return value
+}
 
 // WeakMap to store original styles (element -> original styles)
 const originalStyles = new WeakMap()
@@ -19,6 +100,10 @@ const originalStyles = new WeakMap()
 // Using Map (not WeakMap) so we can iterate over tracked elements
 const trackedElements = new Map()
 
+const originalTexts = new WeakMap()
+const textChangedElements = new Map()
+const lastCommittedText = new WeakMap()
+
 // 삭제된 요소 추적 (element ref 사라지므로 식별자와 원본 스타일 저장)
 // { identifier, tagName, original, deletedAt }
 const deletedElements = []
@@ -26,6 +111,17 @@ const deletedElements = []
 // Undo/Redo 스택 (요소 단위)
 const undoStack = []
 const redoStack = []
+
+// 요소별 직전 커밋 인라인 스타일 (단계별 undo용)
+const lastCommittedInline = new WeakMap()
+
+function snapshotInline(element) {
+  const snap = {}
+  trackedProperties.forEach(prop => {
+    snap[prop] = element.style[prop] || ''
+  })
+  return snap
+}
 
 // 스크린샷 목록
 const screenshots = []
@@ -79,9 +175,52 @@ export function updateCurrent(element) {
   trackedElements.set(element, changes)
 }
 
+export function captureOriginalText(element) {
+  if (!element || originalTexts.has(element)) return
+  originalTexts.set(element, element.textContent == null ? '' : String(element.textContent))
+}
+
+function readText(element) {
+  return !element || element.textContent == null ? '' : String(element.textContent)
+}
+
+function syncTextChange(element) {
+  if (!element) return
+  if (!originalTexts.has(element)) captureOriginalText(element)
+  const original = originalTexts.get(element)
+  const current = readText(element)
+  if (current === original) textChangedElements.delete(element)
+  else textChangedElements.set(element, { original, current })
+}
+
+export function updateCurrentText(element) {
+  if (!element) return
+  if (!originalTexts.has(element)) captureOriginalText(element)
+
+  const original = originalTexts.get(element)
+  const current = readText(element)
+  syncTextChange(element)
+
+  const previous = lastCommittedText.has(element)
+    ? lastCommittedText.get(element)
+    : original
+  if (previous !== current) {
+    undoStack.push({
+      type: 'text',
+      element,
+      previousText: previous,
+      identifier: getElementIdentifier(element),
+    })
+    lastCommittedText.set(element, current)
+    redoStack.length = 0
+  }
+}
+
 export function getChanges(element) {
-  if (!trackedElements.has(element)) return {}
-  return trackedElements.get(element)
+  const styles = trackedElements.has(element) ? trackedElements.get(element) : {}
+  const text = textChangedElements.get(element)
+  if (text) return Object.assign({}, styles, { _text: text })
+  return styles
 }
 
 export function getAllChanges() {
@@ -89,8 +228,14 @@ export function getAllChanges() {
 
   trackedElements.forEach((changes, element) => {
     if (Object.keys(changes).length > 0) {
-      result.set(element, changes)
+      result.set(element, Object.assign({}, changes))
     }
+  })
+
+  textChangedElements.forEach((text, element) => {
+    const existing = result.get(element) || {}
+    existing._text = text
+    result.set(element, existing)
   })
 
   return result
@@ -99,6 +244,10 @@ export function getAllChanges() {
 export function removeElement(element) {
   originalStyles.delete(element)
   trackedElements.delete(element)
+  lastCommittedInline.delete(element)
+  originalTexts.delete(element)
+  textChangedElements.delete(element)
+  lastCommittedText.delete(element)
 }
 
 // 요소의 식별자를 생성 (삭제 후에도 추적용)
@@ -116,8 +265,16 @@ function getElementIdentifier(element) {
   return tag
 }
 
+function isOverlayNode(element) {
+  if (!element || !element.tagName) return true
+  const tag = element.tagName.toLowerCase()
+  return tag === 'vis-bug' || tag.startsWith('visbug')
+}
+
 // 요소 삭제 추적
 export function trackDeletion(element) {
+  if (!element || !element.parentElement || isOverlayNode(element)) return
+
   const identifier = getElementIdentifier(element)
   const original = originalStyles.get(element) || {}
   const deletionId = nextDeletionId++
@@ -145,13 +302,14 @@ export function trackDeletion(element) {
   // Redo 스택 초기화 (새 변경이 생기면 redo 불가)
   redoStack.length = 0
 
-  // 삭제 히스토리 표시용
+  // 삭제 히스토리 표시용 (clonedNode는 AI 프롬프트 HTML 스니펫용)
   deletedElements.push({
     deletionId,
     identifier,
     tagName: element.tagName.toLowerCase(),
     original,
-    deletedAt: Date.now()
+    deletedAt: Date.now(),
+    clonedNode,
   })
 
   // 기존 추적에서 제거
@@ -165,6 +323,7 @@ export function getDeletedElements() {
 
 export function clearAll() {
   trackedElements.clear()
+  textChangedElements.clear()
   deletedElements.length = 0  // 삭제 기록도 초기화
   undoStack.length = 0
   redoStack.length = 0
@@ -173,6 +332,7 @@ export function clearAll() {
 
 export function hasChanges() {
   if (deletedElements.length > 0) return true
+  if (textChangedElements.size > 0) return true
   for (const [, changes] of trackedElements) {
     if (Object.keys(changes).length > 0) return true
   }
@@ -180,11 +340,12 @@ export function hasChanges() {
 }
 
 export function getTrackedCount() {
-  let count = deletedElements.length  // 삭제된 요소 수 포함
-  trackedElements.forEach((changes) => {
-    if (Object.keys(changes).length > 0) count++
+  const unique = new Set()
+  trackedElements.forEach((changes, element) => {
+    if (Object.keys(changes).length > 0) unique.add(element)
   })
-  return count
+  textChangedElements.forEach((_, element) => unique.add(element))
+  return unique.size + deletedElements.length
 }
 
 // 요소 고유 ID 가져오기
@@ -196,69 +357,96 @@ export function getElementId(element) {
 }
 
 // Undo 스택에 현재 상태 저장 (변경 완료 시 호출)
+// 직전 커밋 인라인을 push한 뒤 현재 인라인으로 lastCommitted를 갱신한다.
 export function pushToUndoStack(element) {
   const original = originalStyles.get(element)
   if (!original) return
 
+  const previous = lastCommittedInline.has(element)
+    ? lastCommittedInline.get(element)
+    : { ...original._inline }
+
   undoStack.push({
     type: 'style',
     element,
-    originalInline: { ...original._inline },
+    originalInline: { ...previous },
     identifier: getElementIdentifier(element)
   })
+
+  lastCommittedInline.set(element, snapshotInline(element))
 
   // Redo 스택 초기화 (새 변경이 생기면 redo 불가)
   redoStack.length = 0
 }
 
+function dropDeletedRecord(deletionId) {
+  const deletedIndex = deletedElements.findIndex(d => d.deletionId === deletionId)
+  if (deletedIndex >= 0) {
+    deletedElements.splice(deletedIndex, 1)
+  }
+}
+
 // Undo: 마지막 변경 요소 복원
 export function undo() {
-  const last = undoStack.pop()
-  if (!last) return null
+  while (undoStack.length) {
+    const last = undoStack.pop()
+    if (!last) return null
 
-  // 삭제 undo 처리
-  if (last.type === 'deletion') {
-    const { deletionId, element, parent, nextSibling, identifier, original } = last
+    // 삭제 undo 처리
+    if (last.type === 'deletion') {
+      const { deletionId, element, parent, nextSibling, identifier, original } = last
 
-    // deletedElements 배열에서 제거 (고유 ID로 정확한 매칭)
-    const deletedIndex = deletedElements.findIndex(d => d.deletionId === deletionId)
-    if (deletedIndex >= 0) {
-      deletedElements.splice(deletedIndex, 1)
+      // 오버레이/이미 분리된 노드는 복원할 수 없으므로 건너뛰고 다음 항목으로
+      if (!parent || !parent.isConnected || isOverlayNode(element)) {
+        dropDeletedRecord(deletionId)
+        continue
+      }
+
+      dropDeletedRecord(deletionId)
+
+      // Redo 스택에 삭제 기록 추가
+      redoStack.push({
+        type: 'deletion',
+        deletionId,
+        element,
+        parent,
+        nextSibling,
+        identifier,
+        original,
+      })
+
+      return { type: 'deletion', element, parent, nextSibling, identifier }
     }
 
-    // Redo 스택에 삭제 기록 추가
-    redoStack.push({
-      type: 'deletion',
-      deletionId,
-      element,
-      parent,
-      nextSibling,
-      identifier,
-      original,
+    if (last.type === 'text') {
+      const { element, previousText, identifier } = last
+      const currentText = readText(element)
+      redoStack.push({ type: 'text', element, currentText, identifier })
+      if (element) element.textContent = previousText
+      lastCommittedText.set(element, previousText)
+      syncTextChange(element)
+      return { type: 'text', element, identifier }
+    }
+
+    // 스타일 변경 undo 처리
+    const { element, originalInline, identifier } = last
+
+    // 현재 상태를 redo 스택에 저장
+    const currentInline = snapshotInline(element)
+    redoStack.push({ type: 'style', element, currentInline, identifier })
+
+    // 직전 커밋 스타일로 복원 (최초 원본이 아니라 한 단계)
+    trackedProperties.forEach(prop => {
+      element.style[prop] = originalInline[prop] || ''
     })
 
-    return { type: 'deletion', element, parent, nextSibling, identifier }
+    lastCommittedInline.set(element, { ...originalInline })
+    updateCurrent(element)
+
+    return { type: 'style', element, identifier }
   }
 
-  // 스타일 변경 undo 처리
-  const { element, originalInline, identifier } = last
-
-  // 현재 상태를 redo 스택에 저장
-  const currentInline = {}
-  trackedProperties.forEach(prop => {
-    currentInline[prop] = element.style[prop] || ''
-  })
-  redoStack.push({ type: 'style', element, currentInline, identifier })
-
-  // 원본 스타일로 복원
-  trackedProperties.forEach(prop => {
-    element.style[prop] = originalInline[prop] || ''
-  })
-
-  // 추적에서 제거
-  removeElement(element)
-
-  return { type: 'style', element, identifier }
+  return null
 }
 
 // Redo: 마지막 undo 취소
@@ -293,23 +481,33 @@ export function redo() {
     return { type: 'deletion', element, identifier }
   }
 
+  if (last.type === 'text') {
+    const { element, currentText, identifier } = last
+    const previousText = element && element.textContent == null ? '' : String(element.textContent)
+    undoStack.push({ type: 'text', element, previousText, identifier })
+    if (element) element.textContent = currentText
+    lastCommittedText.set(element, currentText)
+    syncTextChange(element)
+    return { type: 'text', element, identifier }
+  }
+
   // 스타일 변경 redo 처리
   const { element, currentInline, identifier } = last
 
   // 현재 상태를 undo 스택에 저장
-  const originalInline = {}
-  trackedProperties.forEach(prop => {
-    originalInline[prop] = element.style[prop] || ''
-  })
+  const originalInline = snapshotInline(element)
   undoStack.push({ type: 'style', element, originalInline, identifier })
+
+  if (!originalStyles.has(element)) {
+    captureOriginal(element)
+  }
 
   // 변경된 스타일로 복원
   trackedProperties.forEach(prop => {
     element.style[prop] = currentInline[prop] || ''
   })
 
-  // 다시 추적 시작
-  captureOriginal(element)
+  lastCommittedInline.set(element, { ...currentInline })
   updateCurrent(element)
 
   return { type: 'style', element, identifier }
@@ -400,6 +598,10 @@ export function getOriginalStyles(element) {
 export const ChangeTracker = {
   captureOriginal,
   updateCurrent,
+  captureOriginalText,
+  updateCurrentText,
+  cssColorToHex,
+  formatTrackedValue,
   getChanges,
   getAllChanges,
   getOriginalStyles,

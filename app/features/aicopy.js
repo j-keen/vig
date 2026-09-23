@@ -5,12 +5,17 @@ import $ from 'blingblingjs'
 import { ChangeTracker } from './change-tracker'
 import { AIFormatter, copyAllChangesForAI, formatAllForAI } from './ai-formatter'
 
-export function AICopy(visbug) {
+export function cleanupAICopyUI() {
+  document.querySelectorAll('.visbug-notification').forEach(el => el.remove())
+  const style = document.getElementById('visbug-notification-style')
+  if (style) style.remove()
+}
+
+export function AICopy(visbug, e) {
   // Show notification
   const showNotification = (message, type = 'success') => {
     // Remove existing notification
-    const existing = document.querySelector('visbug-notification')
-    if (existing) existing.remove()
+    document.querySelectorAll('.visbug-notification').forEach(el => el.remove())
 
     const notification = document.createElement('div')
     notification.className = 'visbug-notification'
@@ -73,13 +78,9 @@ export function AICopy(visbug) {
     }
   }
 
-  // Setup
-  handleCopy()
+  handleCopy(e)
 
-  // Return cleanup function
-  return () => {
-    // No cleanup needed for this feature
-  }
+  return cleanupAICopyUI
 }
 
 // Hook into position changes to track them

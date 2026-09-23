@@ -7,7 +7,7 @@ const setupPptrTab = async t => {
     args: ['--no-sandbox', '--disable-setuid-sandbox']
   })
   t.context.page = await t.context.browser.newPage()
-  await t.context.page.goto('http://localhost:3333')
+  await t.context.page.goto(`http://localhost:${process.env.E2E_PORT || '3300'}`)
   await t.context.page.evaluateHandle(`document.body.setAttribute('testing', true)`)
   await t.context.page.waitForSelector('vis-bug', { timeout: 10000 })
 }
@@ -53,14 +53,18 @@ test('captureOriginal stores original computed styles', async t => {
     return {
       hasWidth: original && original.width !== undefined,
       hasHeight: original && original.height !== undefined,
-      hasMargin: original && original.margin !== undefined,
+      hasMarginTop: original && original.marginTop !== undefined,
+      hasShorthandMargin: original && original.margin !== undefined,
+      hasShorthandPadding: original && original.padding !== undefined,
       hasInline: original && original._inline !== undefined,
     }
   })
 
   t.true(result.hasWidth, 'Should capture width')
   t.true(result.hasHeight, 'Should capture height')
-  t.true(result.hasMargin, 'Should capture margin')
+  t.true(result.hasMarginTop, 'Should capture marginTop longhand')
+  t.falsy(result.hasShorthandMargin, 'Should not track shorthand margin')
+  t.falsy(result.hasShorthandPadding, 'Should not track shorthand padding')
   t.true(result.hasInline, 'Should store inline styles')
 })
 
@@ -364,4 +368,175 @@ test('undo deletion provides element restoration info', async t => {
   t.is(result.undoType, 'deletion', 'Should undo deletion')
   t.true(result.hasElement, 'Should provide element for restoration')
   t.true(result.hasParent, 'Should provide parent for restoration')
+})
+
+test('margin change tracks longhand only, not shorthand', async t => {
+  const { page } = t.context
+
+  const result = await page.evaluate(() => {
+    window.ChangeTracker.clearAll()
+
+    const el = document.createElement('div')
+    el.style.marginTop = '8px'
+    document.body.appendChild(el)
+
+    window.ChangeTracker.captureOriginal(el)
+    el.style.marginTop = '24px'
+    window.ChangeTracker.updateCurrent(el)
+
+    const changes = window.ChangeTracker.getChanges(el)
+    document.body.removeChild(el)
+    window.ChangeTracker.clearAll()
+
+    return {
+      keys: Object.keys(changes),
+      marginTop: changes.marginTop,
+      hasMargin: 'margin' in changes,
+    }
+  })
+
+  t.true(result.keys.includes('marginTop'), 'Should track marginTop')
+  t.false(result.hasMargin, 'Should not also emit shorthand margin')
+  t.is(result.marginTop, '24px')
+})
+
+test('undo is step-by-step across multiple commits, redo restores each step', async t => {
+  const { page } = t.context
+
+  const result = await page.evaluate(() => {
+    window.ChangeTracker.clearAll()
+
+    const el = document.createElement('div')
+    el.style.width = '100px'
+    document.body.appendChild(el)
+
+    window.ChangeTracker.captureOriginal(el)
+
+    el.style.width = '200px'
+    window.ChangeTracker.updateCurrent(el)
+    window.ChangeTracker.pushToUndoStack(el)
+
+    el.style.width = '300px'
+    window.ChangeTracker.updateCurrent(el)
+    window.ChangeTracker.pushToUndoStack(el)
+
+    el.style.width = '400px'
+    window.ChangeTracker.updateCurrent(el)
+    window.ChangeTracker.pushToUndoStack(el)
+
+    const afterThree = el.style.width
+
+    window.ChangeTracker.undo()
+    const afterUndo1 = el.style.width
+    const changesAfterUndo1 = window.ChangeTracker.getChanges(el).width
+
+    window.ChangeTracker.undo()
+    const afterUndo2 = el.style.width
+
+    window.ChangeTracker.undo()
+    const afterUndo3 = el.style.width
+    const changeCountAfterFullUndo = window.ChangeTracker.getAllChanges().size
+
+    window.ChangeTracker.redo()
+    const afterRedo1 = el.style.width
+    window.ChangeTracker.redo()
+    const afterRedo2 = el.style.width
+    window.ChangeTracker.redo()
+    const afterRedo3 = el.style.width
+    const changesAfterFullRedo = window.ChangeTracker.getChanges(el).width
+
+    document.body.removeChild(el)
+    window.ChangeTracker.clearAll()
+
+    return {
+      afterThree,
+      afterUndo1,
+      changesAfterUndo1,
+      afterUndo2,
+      afterUndo3,
+      changeCountAfterFullUndo,
+      afterRedo1,
+      afterRedo2,
+      afterRedo3,
+      changesAfterFullRedo,
+    }
+  })
+
+  t.is(result.afterThree, '400px')
+  t.is(result.afterUndo1, '300px', 'First undo should restore the previous commit, not the original')
+  t.is(result.changesAfterUndo1, '300px', 'Tracking should recompute after undo, not drop the element')
+  t.is(result.afterUndo2, '200px')
+  t.is(result.afterUndo3, '100px')
+  t.is(result.changeCountAfterFullUndo, 0, 'Matching original should yield empty changes')
+  t.is(result.afterRedo1, '200px')
+  t.is(result.afterRedo2, '300px')
+  t.is(result.afterRedo3, '400px')
+  t.is(result.changesAfterFullRedo, '400px')
+})
+
+test('trackDeletion ignores overlay nodes and undo skips invalid deletion records', async t => {
+  const { page } = t.context
+
+  const result = await page.evaluate(() => {
+    window.ChangeTracker.clearAll()
+
+    const el = document.createElement('div')
+    el.id = 'real-del-el'
+    el.textContent = 'Keep me'
+    document.body.appendChild(el)
+
+    const overlay = document.createElement('visbug-handles')
+    overlay.setAttribute('data-label-id', '0')
+    document.body.appendChild(overlay)
+
+    window.ChangeTracker.captureOriginal(el)
+    window.ChangeTracker.trackDeletion(el)
+    window.ChangeTracker.trackDeletion(overlay)
+    overlay.remove()
+
+    const afterTrack = window.ChangeTracker.getDeletedElements().map(d => d.identifier)
+
+    el.remove()
+
+    const undo1 = window.ChangeTracker.undo()
+    const restored = undo1 && undo1.element && undo1.element.id
+    const parentOk = !!(undo1 && undo1.parent && undo1.parent.isConnected)
+
+    window.ChangeTracker.clearAll()
+    return { afterTrack, undoType: undo1 && undo1.type, restored, parentOk }
+  })
+
+  t.deepEqual(result.afterTrack, ['#real-del-el'])
+  t.is(result.undoType, 'deletion')
+  t.is(result.restored, 'real-del-el')
+  t.true(result.parentOk)
+})
+
+test('trackDeletion stores clonedNode for AI HTML snippets', async t => {
+  const { page } = t.context
+
+  const result = await page.evaluate(() => {
+    window.ChangeTracker.clearAll()
+
+    const el = document.createElement('button')
+    el.id = 'snippet-delete'
+    el.textContent = 'Close'
+    document.body.appendChild(el)
+
+    window.ChangeTracker.captureOriginal(el)
+    window.ChangeTracker.trackDeletion(el)
+
+    const deleted = window.ChangeTracker.getDeletedElements()[0]
+    const html = deleted && deleted.clonedNode && deleted.clonedNode.outerHTML
+
+    window.ChangeTracker.clearAll()
+
+    return {
+      hasClonedNode: !!(deleted && deleted.clonedNode),
+      html,
+    }
+  })
+
+  t.true(result.hasClonedNode, 'deletedElements should keep clonedNode')
+  t.true(result.html.includes('Close'), 'clonedNode should preserve element HTML')
 })

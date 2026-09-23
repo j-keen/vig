@@ -2,66 +2,94 @@ import {gimmeToggle} from "./contextmenu/launcher.js"
 import {getColorMode} from "./contextmenu/colormode.js"
 import {getColorScheme} from "./contextmenu/colorscheme.js"
 
-const state = {
-  loaded:   {},
-  injected: {},
-}
-
 var platform = typeof browser === 'undefined'
   ? chrome
   : browser
 
-const toggleIn = ({id:tab_id, url}) => {
+const isRestrictedUrl = (url) =>
+  !!(url && (
+    url.startsWith('chrome://') ||
+    url.startsWith('edge://') ||
+    url.startsWith('about:') ||
+    url.startsWith('chrome-extension://')
+  ))
+
+const probePageState = async (tab_id) => {
+  try {
+    const results = await platform.scripting.executeScript({
+      target: {tabId: tab_id},
+      func: () => ({
+        loaded: !!document.querySelector('script[data-designpoke]'),
+        injected: !!document.querySelector('vis-bug'),
+      }),
+    })
+    const pageState = results && results[0] && results[0].result
+    return {
+      loaded: !!(pageState && pageState.loaded),
+      injected: !!(pageState && pageState.injected),
+    }
+  } catch (err) {
+    console.warn('DesignPoke: failed to probe page state', err)
+    return { loaded: false, injected: false }
+  }
+}
+
+const toggleIn = async ({id:tab_id, url}) => {
   // chrome://, edge://, about: 등 특수 페이지에서는 실행 불가
-  if (url && (url.startsWith('chrome://') || url.startsWith('edge://') || url.startsWith('about:') || url.startsWith('chrome-extension://'))) {
+  if (isRestrictedUrl(url)) {
     console.log('이 페이지에서는 디자인 조정기를 사용할 수 없습니다.')
     return
   }
 
-  // toggle out: it's currently loaded and injected
-  if (state.loaded[tab_id] && state.injected[tab_id]) {
-    platform.scripting.executeScript({
+  const { loaded, injected } = await probePageState(tab_id)
+
+  // toggle out: toolbar is currently in the page
+  if (loaded && injected) {
+    await platform.scripting.executeScript({
       target: {tabId: tab_id},
       files: ['toolbar/eject.js'],
     })
-    state.injected[tab_id] = false
+    return
   }
 
-  // toggle in: it's loaded and needs injected
-  else if (state.loaded[tab_id] && !state.injected[tab_id]) {
-    platform.scripting.executeScript({
+  // toggle in: script already loaded, vis-bug was removed (Esc / SW restart)
+  if (loaded && !injected) {
+    await platform.scripting.executeScript({
       target: {tabId: tab_id},
       files: ['toolbar/restore.js'],
     })
-    state.injected[tab_id] = true
     getColorMode()
     getColorScheme()
+    return
   }
 
   // fresh start in tab
-  else {
-    platform.scripting.insertCSS({
-      target: {tabId: tab_id},
-      files: ['toolbar/bundle.css' ],
-    })
-    platform.scripting.executeScript({
-      target: {tabId: tab_id},
-      files: ['toolbar/inject.js'],
-    })
-
-    state.loaded[tab_id]    = true
-    state.injected[tab_id]  = true
-    getColorMode()
-    getColorScheme()
-  }
-
-  platform.tabs.onUpdated.addListener(function(tabId) {
-    if (tabId === tab_id)
-      state.loaded[tabId] = false
+  await platform.scripting.insertCSS({
+    target: {tabId: tab_id},
+    files: ['toolbar/bundle.css'],
   })
+  await platform.scripting.executeScript({
+    target: {tabId: tab_id},
+    files: ['toolbar/inject.js'],
+  })
+  getColorMode()
+  getColorScheme()
 }
 
+// Exposed for tests/debug: puppeteer evaluates this on the service worker.
+globalThis.__designpokeToggle = toggleIn
+
 gimmeToggle(toggleIn)
+
+const respondDownloadComplete = (sendResponse, screenshotUrl, filename, path) => {
+  const payload = {
+    success: true,
+    filename: filename,
+    dataUrl: screenshotUrl,
+  }
+  if (path) payload.path = path
+  sendResponse(payload)
+}
 
 // 스크린샷 메시지 핸들러
 platform.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -103,12 +131,15 @@ platform.runtime.onMessage.addListener((request, sender, sendResponse) => {
             platform.downloads.onChanged.removeListener(onChanged)
             platform.downloads.search({id: downloadId}, (results) => {
               if (results && results[0]) {
-                sendResponse({
-                  success: true,
-                  path: results[0].filename,
-                  filename: filename,
-                  dataUrl: screenshotUrl
-                })
+                respondDownloadComplete(
+                  sendResponse,
+                  screenshotUrl,
+                  filename,
+                  results[0].filename
+                )
+              } else {
+                // search 결과가 비면 path 없이 filename만으로 응답 (sendResponse hang 방지)
+                respondDownloadComplete(sendResponse, screenshotUrl, filename)
               }
             })
           } else if (delta.state && delta.state.current === 'interrupted') {

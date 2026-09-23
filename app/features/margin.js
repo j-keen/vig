@@ -35,7 +35,7 @@ export function Margin(visbug) {
   }
 }
 
-export function pushElement(els, direction) {
+export function pushElement(els, direction, commit = true) {
   els
     .map(el => showHideSelected(el))
     .map(el => {
@@ -60,6 +60,7 @@ export function pushElement(els, direction) {
       el.style[style] = `${margin < 0 ? 0 : margin}px`
       // 변경 추적: 현재 스타일 업데이트
       ChangeTracker.updateCurrent(el)
+      if (commit) ChangeTracker.pushToUndoStack(el)
     })
 }
 
@@ -71,7 +72,9 @@ export function pushAllElementSides(els, keycommand) {
   if (combo.includes('down'))   spoof = 'alt+' + spoof
 
   'up,down,left,right'.split(',')
-    .forEach(side => pushElement(els, spoof + side))
+    .forEach(side => pushElement(els, spoof + side, false))
+
+  els.forEach(el => ChangeTracker.pushToUndoStack(el))
 }
 
 function paintBackgrounds(els) {

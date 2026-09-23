@@ -8,8 +8,9 @@ import {
 } from '../'
 
 import {
-  Selectable, Moveable, Padding, Margin,
+  Selectable, Moveable, Padding, Margin, EditText, Font,
   Flex, Guides, Position, draggable,
+  ColorPicker, HueShift,
   AICopy, setupAICopyTooltip,
   DepthSelector
 } from '../../features/'
@@ -52,6 +53,7 @@ export default class VisBug extends HTMLElement {
     this.setup()
 
     this.selectorEngine = Selectable(this)
+    this.colorPicker = ColorPicker(this.$shadow, this.selectorEngine)
 
     // 안내선 항상 활성화 (배경 기능으로)
     this.guidesFeature = Guides(this.selectorEngine)
@@ -97,6 +99,10 @@ export default class VisBug extends HTMLElement {
   setup() {
     this.$shadow.innerHTML = this.render()
 
+    this.hasAttribute('color-mode')
+      ? this.getAttribute('color-mode')
+      : this.setAttribute('color-mode', 'hex')
+
     this.hasAttribute('color-scheme')
       ? this.getAttribute('color-scheme')
       : this.setAttribute('color-scheme', 'auto')
@@ -110,7 +116,10 @@ export default class VisBug extends HTMLElement {
     const clickEvent = (e, clickSurface) => {
       const target = clickSurface || e.target
       const toolButton = target.closest ? target.closest('[data-tool]') : null
-      if (toolButton) this.toolSelected(toolButton) && e.stopPropagation();
+      if (toolButton) {
+        this.toolSelected(toolButton, e)
+        e.stopPropagation && e.stopPropagation()
+      }
     }
 
     Array.from(buttonPieces)
@@ -133,7 +142,8 @@ export default class VisBug extends HTMLElement {
       hotkeys(key, e => {
         e.preventDefault()
         this.toolSelected(
-          $(`[data-tool="${value.tool}"]`, this.$shadow)[0]
+          $(`[data-tool="${value.tool}"]`, this.$shadow)[0],
+          e
         )
       })
     )
@@ -160,13 +170,24 @@ export default class VisBug extends HTMLElement {
     document.querySelectorAll('[data-pseudo-select=true]')
       .forEach(el =>
         el.removeAttribute('data-pseudo-select'))
+
+    document.querySelectorAll('.visbug-notification').forEach(el => el.remove())
+    const notifStyle = document.getElementById('visbug-notification-style')
+    if (notifStyle) notifStyle.remove()
   }
 
-  toolSelected(el) {
+  toolSelected(el, e) {
     if (typeof el === 'string')
       el = $(`[data-tool="${el}"]`, this.$shadow)[0]
 
     if (!el) return
+
+    // aicopy is an action button: copy (or Alt+click clear) without leaving the current tool
+    if (el.dataset.tool === 'aicopy') {
+      this.aicopy(e)
+      this.flashActionButton(el)
+      return
+    }
 
     if (this.active_tool && this.active_tool.dataset.tool === el.dataset.tool) return
 
@@ -178,6 +199,18 @@ export default class VisBug extends HTMLElement {
     el.attr('data-active', true)
     this.active_tool = el
     this[el.dataset.tool]()
+  }
+
+  flashActionButton(el) {
+    if (!el || !el.style) return
+    const previous = el.style.filter
+    el.style.filter = 'brightness(1.8)'
+    el.setAttribute('data-copied', 'true')
+    clearTimeout(this._actionFlashTimer)
+    this._actionFlashTimer = setTimeout(() => {
+      el.style.filter = previous
+      el.removeAttribute('data-copied')
+    }, 280)
   }
 
   render() {
@@ -192,14 +225,31 @@ export default class VisBug extends HTMLElement {
           </li>
         `,'')}
       </ol>
+      <ol colors>
+        <li class="color" id="foreground" aria-label="글자색" aria-description="글자 색을 바꿉니다">
+          <input type="color">
+          ${Icons.color_text}
+        </li>
+        <li class="color" id="background" aria-label="배경색" aria-description="배경 색을 바꿉니다">
+          <input type="color">
+          ${Icons.color_background}
+        </li>
+        <li class="color" id="border" aria-label="테두리색" aria-description="테두리 색을 바꿉니다">
+          <input type="color">
+          ${Icons.color_border}
+        </li>
+      </ol>
     `
   }
 
-  demoTip({key, tool, label, description, instruction}) {
+  demoTip({key, tool, label, description, instruction, hasGif}) {
+    const img = hasGif === false
+      ? ''
+      : `<img src="${this._tutsBaseURL}/${tool}.gif" alt="${description}" onerror="this.style.display='none'" />`
     return `
       <aside ${tool}>
         <figure>
-          <img src="${this._tutsBaseURL}/${tool}.gif" alt="${description}" />
+          ${img}
           <figcaption>
             <h2>
               ${label}
@@ -245,8 +295,25 @@ export default class VisBug extends HTMLElement {
     this.deactivate_feature = Moveable(this.selectorEngine)
   }
 
-  aicopy() {
-    this.deactivate_feature = AICopy(this)
+  text() {
+    this.selectorEngine.onSelectedUpdate(EditText)
+    this.deactivate_feature = () =>
+      this.selectorEngine.removeSelectedCallback(EditText)
+  }
+
+  font() {
+    this.deactivate_feature = Font(this.selectorEngine)
+  }
+
+  hueshift() {
+    this.deactivate_feature = HueShift({
+      Color:  this.colorPicker,
+      Visbug: this.selectorEngine,
+    })
+  }
+
+  aicopy(e) {
+    AICopy(this, e)
   }
 
   execCommand(command) {

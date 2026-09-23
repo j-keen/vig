@@ -373,4 +373,327 @@ test('getIdentifier - element identification priority (id > text > icon > class)
   t.pass()
 })
 
+test('formatTransformValue parses matrix into translate/scale and keeps rotate matrix', async t => {
+  const { page } = t.context
+
+  const result = await page.evaluate(() => {
+    const fmt = window.AIFormatter.formatTransformValue
+    return {
+      translate: fmt('matrix(1, 0, 0, 1, 12, -4)'),
+      scale: fmt('matrix(1.2, 0, 0, 1.2, 0, 0)'),
+      both: fmt('matrix(1.2, 0, 0, 1.2, 12, -4)'),
+      rotate: fmt('matrix(0.866025, 0.5, -0.5, 0.866025, 0, 0)'),
+      none: fmt('none'),
+    }
+  })
+
+  t.is(result.translate, 'translate(12px, -4px)')
+  t.is(result.scale, 'scale(1.2)')
+  t.is(result.both, 'translate(12px, -4px) scale(1.2)')
+  t.true(result.rotate.startsWith('matrix('), 'rotation should keep matrix()')
+  t.is(result.none, 'none')
+})
+
+test('getCSSSelector uses nth-of-type, CSS.escape, and drops utility classes', async t => {
+  const { page } = t.context
+
+  const result = await page.evaluate(() => {
+    const parent = document.createElement('section')
+    parent.className = 'card-list flex gap-4'
+    parent.id = 'list:main'
+
+    const first = document.createElement('button')
+    first.className = 'p-4 m-2 w-full h-10 text-sm bg-blue-500 flex grid items-center justify-center gap-2 rounded-md border btn-primary'
+    first.textContent = 'One'
+
+    const second = document.createElement('button')
+    second.className = 'p-4 flex btn-secondary'
+    second.textContent = 'Two'
+
+    parent.appendChild(first)
+    parent.appendChild(second)
+    document.body.appendChild(parent)
+
+    const withId = window.AIFormatter.getCSSSelector(parent)
+    const firstSel = window.AIFormatter.getCSSSelector(first)
+    const secondSel = window.AIFormatter.getCSSSelector(second)
+    const classLine = window.AIFormatter.formatElementForAI(first, {}, 1)
+
+    parent.remove()
+
+    return { withId, firstSel, secondSel, classLine }
+  })
+
+  t.is(result.withId, '#list\\:main')
+  t.false(result.firstSel.includes(':nth-child('))
+  t.true(result.firstSel.includes(':nth-of-type(1)'))
+  t.true(result.secondSel.includes(':nth-of-type(2)'))
+  t.true(result.firstSel.includes('btn-primary'))
+  t.false(result.firstSel.includes('.p-4'))
+  t.false(result.firstSel.includes('.flex'))
+  t.true(result.classLine.includes('p-4 m-2 w-full'), 'class line should keep the full class string')
+})
+
+test('formatElementForAI adds parent layout, HTML snippet, final inline, and skips transformOrigin without scale', async t => {
+  const { page } = t.context
+
+  const result = await page.evaluate(() => {
+    window.ChangeTracker.clearAll()
+
+    const parent = document.createElement('div')
+    parent.style.display = 'flex'
+    parent.style.flexDirection = 'column'
+    document.body.appendChild(parent)
+
+    const el = document.createElement('div')
+    el.id = 'ai-extra'
+    el.className = 'card p-4'
+    el.textContent = 'Hello extra context'
+    parent.appendChild(el)
+
+    window.ChangeTracker.captureOriginal(el)
+    el.style.marginTop = '24px'
+    el.style.transformOrigin = '0px 0px'
+    window.ChangeTracker.updateCurrent(el)
+
+    const changes = window.ChangeTracker.getChanges(el)
+    const formatted = window.AIFormatter.formatElementForAI(el, changes, 1)
+
+    parent.remove()
+    window.ChangeTracker.clearAll()
+
+    return { formatted, changeKeys: Object.keys(changes) }
+  })
+
+  t.true(result.formatted.includes('부모:'))
+  t.true(result.formatted.includes('display: flex'))
+  t.true(result.formatted.includes('flex-direction: column'))
+  t.true(result.formatted.includes('- HTML:'))
+  t.true(result.formatted.includes('최종 인라인 스타일:'))
+  t.false(result.formatted.includes('  - transform-origin:'), 'origin should be omitted from changes unless transform has scale')
+})
+
+test('formatDeletedForAI includes outerHTML snippet from clonedNode', async t => {
+  const { page } = t.context
+
+  const result = await page.evaluate(() => {
+    window.ChangeTracker.clearAll()
+
+    const el = document.createElement('button')
+    el.id = 'gone-btn'
+    el.textContent = 'Remove me'
+    document.body.appendChild(el)
+
+    window.ChangeTracker.captureOriginal(el)
+    window.ChangeTracker.trackDeletion(el)
+
+    const deleted = window.ChangeTracker.getDeletedElements()[0]
+    const formatted = window.AIFormatter.formatDeletedForAI(deleted, 1)
+
+    window.ChangeTracker.clearAll()
+    return formatted
+  })
+
+  t.true(result.includes('삭제'))
+  t.true(result.includes('- HTML:'))
+  t.true(result.includes('Remove me'))
+})
+
+test('formatAllForAI sample includes margin, move, deletion, and style-system instruction', async t => {
+  const { page } = t.context
+
+  const result = await page.evaluate(() => {
+    window.ChangeTracker.clearAll()
+
+    const marginEl = document.createElement('div')
+    marginEl.id = 'sample-margin'
+    marginEl.className = 'card p-4'
+    marginEl.textContent = 'Hello card'
+    document.body.appendChild(marginEl)
+    window.ChangeTracker.captureOriginal(marginEl)
+    marginEl.style.marginTop = '24px'
+    window.ChangeTracker.updateCurrent(marginEl)
+
+    const moveEl = document.createElement('div')
+    moveEl.id = 'sample-move'
+    moveEl.textContent = 'Draggable'
+    document.body.appendChild(moveEl)
+    window.ChangeTracker.captureOriginal(moveEl)
+    moveEl.style.position = 'relative'
+    moveEl.style.left = '12px'
+    moveEl.style.top = '-4px'
+    window.ChangeTracker.updateCurrent(moveEl)
+
+    const delEl = document.createElement('button')
+    delEl.id = 'sample-delete'
+    delEl.className = 'btn-close'
+    delEl.textContent = 'Close'
+    document.body.appendChild(delEl)
+    window.ChangeTracker.captureOriginal(delEl)
+    window.ChangeTracker.trackDeletion(delEl)
+
+    const formatted = window.AIFormatter.formatAllForAI()
+
+    marginEl.remove()
+    moveEl.remove()
+    window.ChangeTracker.clearAll()
+
+    return formatted
+  })
+
+  t.true(result.includes('#sample-margin'))
+  t.true(result.includes('margin-top:'))
+  t.false(result.includes('\n  - margin:'), 'shorthand margin should not appear')
+  t.true(result.includes('#sample-move'))
+  t.true(result.includes('position:'))
+  t.false(result.includes('  - right:'), 'computed right should not appear in sample')
+  t.false(result.includes('  - bottom:'), 'computed bottom should not appear in sample')
+  t.true(result.includes('#sample-delete') || result.includes('삭제'))
+  t.true(result.includes('픽셀값을 그대로 쓰지 말고'))
+  t.true(result.includes('position:relative + left/top'))
+
+  t.context.samplePrompt = result
+})
+
+test('formatAllForAI sample includes text change and hex color change', async t => {
+  const { page } = t.context
+
+  const result = await page.evaluate(() => {
+    window.ChangeTracker.clearAll()
+
+    const el = document.createElement('button')
+    el.id = 'sample-copy'
+    el.textContent = 'Sign in'
+    el.style.color = 'rgb(0, 0, 0)'
+    document.body.appendChild(el)
+
+    window.ChangeTracker.captureOriginal(el)
+    window.ChangeTracker.captureOriginalText(el)
+
+    el.textContent = 'Get started'
+    el.style.color = 'rgb(255, 0, 0)'
+    window.ChangeTracker.updateCurrent(el)
+    window.ChangeTracker.updateCurrentText(el)
+
+    const formatted = window.AIFormatter.formatAllForAI()
+    el.remove()
+    window.ChangeTracker.clearAll()
+    return formatted
+  })
+
+  console.log('[formatAllForAI text+color sample]\n' + result)
+
+  t.true(result.includes('#sample-copy'))
+  t.true(result.includes('- 텍스트:'))
+  t.true(result.includes('Sign in'))
+  t.true(result.includes('Get started'))
+  t.true(result.includes('color:'))
+  t.true(result.includes('#ff0000') || result.includes('#FF0000'))
+})
+
+test('formatElementForAI omits computed-only sides not set on element.style', async t => {
+  const { page } = t.context
+
+  const result = await page.evaluate(() => {
+    window.ChangeTracker.clearAll()
+
+    const el = document.createElement('div')
+    el.id = 'computed-noise'
+    el.textContent = 'Move me'
+    document.body.appendChild(el)
+
+    window.ChangeTracker.captureOriginal(el)
+    el.style.position = 'relative'
+    el.style.left = '12px'
+    el.style.top = '-4px'
+    window.ChangeTracker.updateCurrent(el)
+
+    const changes = window.ChangeTracker.getChanges(el)
+    const formatted = window.AIFormatter.formatElementForAI(el, changes, 1)
+
+    el.remove()
+    window.ChangeTracker.clearAll()
+
+    return {
+      formatted,
+      changeKeys: Object.keys(changes),
+    }
+  })
+
+  t.true(result.formatted.includes('  - position:'))
+  t.true(result.formatted.includes('  - left:'))
+  t.true(result.formatted.includes('  - top:'))
+  t.false(result.formatted.includes('  - right:'), 'computed right should be omitted')
+  t.false(result.formatted.includes('  - bottom:'), 'computed bottom should be omitted')
+})
+
+test('aicopy is an action: keeps current tool, works twice, Alt+click clears', async t => {
+  const { page } = t.context
+
+  await page.evaluate(() => {
+    navigator.clipboard.writeText = async (text) => { window.__lastCopy = text }
+    const vis = document.querySelector('vis-bug')
+    vis.toolSelected('position')
+  })
+
+  const before = await page.evaluate(() => document.querySelector('vis-bug').activeTool)
+  t.is(before, 'position')
+
+  await page.evaluate(() => {
+    window.ChangeTracker.clearAll()
+    const el = document.createElement('div')
+    el.id = 'copy-twice'
+    el.style.width = '100px'
+    document.body.appendChild(el)
+    window.ChangeTracker.captureOriginal(el)
+    el.style.width = '160px'
+    window.ChangeTracker.updateCurrent(el)
+  })
+
+  const first = await page.evaluate(async () => {
+    document.querySelector('vis-bug').toolSelected('aicopy', { altKey: false })
+    await new Promise(r => setTimeout(r, 50))
+    return {
+      tool: document.querySelector('vis-bug').activeTool,
+      notice: document.querySelector('.visbug-notification')?.textContent || '',
+      copied: !!window.__lastCopy,
+      img: !!document.querySelector('vis-bug').$shadow.querySelector('[data-tool="aicopy"] img'),
+    }
+  })
+
+  t.is(first.tool, 'position', 'aicopy should not steal the active tool')
+  t.true(first.notice.length > 0, 'first click should show a notification')
+  t.false(first.img, 'aicopy tooltip should omit missing gif')
+
+  const second = await page.evaluate(async () => {
+    window.__lastCopy = ''
+    document.querySelector('vis-bug').toolSelected('aicopy', { altKey: false })
+    await new Promise(r => setTimeout(r, 50))
+    return {
+      tool: document.querySelector('vis-bug').activeTool,
+      notice: document.querySelector('.visbug-notification')?.textContent || '',
+      noticeCount: document.querySelectorAll('.visbug-notification').length,
+      copied: !!window.__lastCopy,
+    }
+  })
+
+  t.is(second.tool, 'position')
+  t.true(second.notice.length > 0, 'second click should show a notification again')
+  t.is(second.noticeCount, 1, 'previous notification should be replaced, not stacked')
+
+  const cleared = await page.evaluate(async () => {
+    document.querySelector('vis-bug').toolSelected('aicopy', { altKey: true })
+    await new Promise(r => setTimeout(r, 50))
+    return {
+      tool: document.querySelector('vis-bug').activeTool,
+      notice: document.querySelector('.visbug-notification')?.textContent || '',
+      remaining: window.ChangeTracker.getTrackedCount(),
+    }
+  })
+
+  t.is(cleared.tool, 'position')
+  t.true(cleared.notice.includes('초기화'))
+  t.is(cleared.remaining, 0)
+})
+
 test.afterEach(teardownPptrTab)

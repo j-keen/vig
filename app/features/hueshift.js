@@ -3,6 +3,7 @@ import hotkeys from 'hotkeys-js'
 import { TinyColor } from '@ctrl/tinycolor'
 
 import { metaKey, getStyle, showHideSelected } from '../utilities/'
+import { ChangeTracker } from './change-tracker'
 
 const key_events = 'up,down,left,right'
   .split(',')
@@ -117,7 +118,10 @@ export function changeHue(els, direction, prop, ColorTool) {
     })
     .forEach(({el, style, current}) => {
       let color = new TinyColor(current).setAlpha(current.a)
+      ChangeTracker.captureOriginal(el)
       el.style[style] = color.toHslString()
+      ChangeTracker.updateCurrent(el)
+      ChangeTracker.pushToUndoStack(el)
 
       if (style == 'color') ColorTool.foreground.color(color.toHslString())
       if (style == 'backgroundColor') ColorTool.background.color(color.toHslString())

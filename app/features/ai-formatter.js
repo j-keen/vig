@@ -2,11 +2,161 @@
 // 구조화된 프롬프트 템플릿으로 변경사항을 포맷
 // 페이지 컨텍스트 + 원본값/변화량(delta) + 자연어 설명 포함
 
-import { ChangeTracker } from './change-tracker'
+import { ChangeTracker, trackedProperties, formatTrackedValue } from './change-tracker'
 
 // CSS 속성명을 kebab-case로 변환
 function toKebabCase(str) {
   return str.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase()
+}
+
+function formatCssNumber(n, digits = 3) {
+  const rounded = Math.round(n * Math.pow(10, digits)) / Math.pow(10, digits)
+  return Object.is(rounded, -0) ? '0' : String(rounded)
+}
+
+function formatPx(n) {
+  return `${formatCssNumber(n, 2)}px`
+}
+
+function readMatrix2D(value) {
+  if (!value || value === 'none') return null
+  const str = String(value)
+
+  if (typeof DOMMatrix === 'function') {
+    try {
+      const m = new DOMMatrix(str)
+      return { a: m.a, b: m.b, c: m.c, d: m.d, e: m.e, f: m.f }
+    } catch (err) {
+      // fall through to regex
+    }
+  }
+
+  const match = str.match(/^matrix\(\s*([^)]+)\)/i)
+  if (!match) return null
+  const nums = match[1].split(',').map(part => parseFloat(part.trim()))
+  if (nums.length < 6 || nums.some(v => Number.isNaN(v))) return null
+  return { a: nums[0], b: nums[1], c: nums[2], d: nums[3], e: nums[4], f: nums[5] }
+}
+
+export function formatTransformValue(value) {
+  if (value == null || value === '') return value
+  if (value === 'none') return 'none'
+
+  const m = readMatrix2D(value)
+  if (!m) return value
+
+  const eps = 0.005
+  const hasRotateOrSkew = Math.abs(m.b) > eps || Math.abs(m.c) > eps
+  if (hasRotateOrSkew) return value
+
+  const parts = []
+  if (Math.abs(m.e) > eps || Math.abs(m.f) > eps) {
+    parts.push(`translate(${formatPx(m.e)}, ${formatPx(m.f)})`)
+  }
+
+  const hasScale = Math.abs(m.a - 1) > eps || Math.abs(m.d - 1) > eps
+  if (hasScale) {
+    if (Math.abs(m.a - m.d) <= eps) {
+      parts.push(`scale(${formatCssNumber(m.a)})`)
+    } else {
+      parts.push(`scale(${formatCssNumber(m.a)}, ${formatCssNumber(m.d)})`)
+    }
+  }
+
+  return parts.length ? parts.join(' ') : 'none'
+}
+
+export function transformHasScale(value) {
+  if (!value || value === 'none') return false
+  if (/\bscale\(/i.test(String(value))) return true
+
+  const m = readMatrix2D(value)
+  if (!m) return false
+  const scaleX = Math.hypot(m.a, m.b)
+  const scaleY = Math.hypot(m.c, m.d)
+  return Math.abs(scaleX - 1) > 0.01 || Math.abs(scaleY - 1) > 0.01
+}
+
+function cssEscape(value) {
+  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+    return CSS.escape(value)
+  }
+  return String(value).replace(/([\0-\x2c./:-@[-^`{-])/g, '\\$1')
+}
+
+const UTILITY_EXACT = new Set([
+  'flex', 'inline-flex', 'grid', 'inline-grid',
+  'hidden', 'block', 'inline', 'inline-block',
+  'relative', 'absolute', 'fixed', 'sticky', 'static',
+])
+
+const UTILITY_PATTERNS = [
+  /^(p|px|py|pt|pr|pb|pl)-/,
+  /^-?(m|mx|my|mt|mr|mb|ml)-/,
+  /^(w|h)-/,
+  /^text-/,
+  /^bg-/,
+  /^items-/,
+  /^justify-/,
+  /^gap-/,
+  /^rounded/,
+  /^border/,
+]
+
+export function isUtilityClass(name) {
+  if (!name) return true
+  const base = name.includes(':') ? name.split(':').pop() : name
+  if (UTILITY_EXACT.has(base)) return true
+  return UTILITY_PATTERNS.some(pattern => pattern.test(base))
+}
+
+function collapseChildText(node) {
+  if (!node) return
+  const textType = (typeof Node !== 'undefined' && Node.TEXT_NODE) || 3
+  if (node.nodeType === textType) {
+    const t = String(node.textContent || '').replace(/\s+/g, ' ').trim()
+    node.textContent = t.length > 24 ? t.slice(0, 24) + '...' : t
+    return
+  }
+  const kids = node.childNodes ? Array.from(node.childNodes) : []
+  kids.forEach(collapseChildText)
+}
+
+export function getOuterHTMLSnippet(element, maxLen = 200) {
+  if (!element) return ''
+  const clone = element.cloneNode ? element.cloneNode(true) : element
+  if (clone && clone.removeAttribute) {
+    clone.removeAttribute('data-selected')
+    clone.removeAttribute('data-label-id')
+    clone.removeAttribute('data-pseudo-select')
+  }
+  collapseChildText(clone)
+  let html = (clone && clone.outerHTML) || element.outerHTML || ''
+  if (html.length > maxLen) html = html.slice(0, maxLen) + '...'
+  return html
+}
+
+function getParentLayout(element) {
+  const parent = element && element.parentElement
+  if (!parent || typeof window === 'undefined' || !window.getComputedStyle) return null
+  const cs = window.getComputedStyle(parent)
+  const display = cs.display || 'block'
+  if (display === 'flex' || display === 'inline-flex') {
+    return `display: ${display}; flex-direction: ${cs.flexDirection || 'row'}`
+  }
+  return `display: ${display}`
+}
+
+function getFinalInlineStyles(element) {
+  if (!element || !element.style) return null
+  const parts = []
+  trackedProperties.forEach(prop => {
+    const raw = element.style[prop]
+    if (!raw) return
+    const value = prop === 'transform' ? formatTransformValue(raw) : formatTrackedValue(prop, raw)
+    parts.push(`${toKebabCase(prop)}: ${value}`)
+  })
+  return parts.length ? parts.join('; ') : null
 }
 
 // 속성별 자연어 설명 매핑
@@ -35,6 +185,22 @@ const propertyDescriptions = {
   minHeight:     { set: '최소 세로 크기 변경' },
   maxHeight:     { set: '최대 세로 크기 변경' },
   transformOrigin: { set: 'transform-origin 변경' },
+  color:           { set: '글자색 변경' },
+  backgroundColor: { set: '배경색 변경' },
+  borderColor:     { set: '테두리색 변경' },
+  fontSize:        { increase: '글자 크기 증가', decrease: '글자 크기 감소' },
+  fontWeight:      { set: '글자 굵기 변경' },
+  lineHeight:      { increase: '줄간격 증가', decrease: '줄간격 감소' },
+  letterSpacing:   { increase: '자간 증가', decrease: '자간 감소' },
+  textAlign:       { set: '정렬 변경' },
+  borderRadius:    { set: '모서리 둥글기 변경' },
+  opacity:         { increase: '불투명도 증가', decrease: '불투명도 감소' },
+}
+
+function truncateTrackedText(value, max = 60) {
+  const text = value == null ? '' : String(value).replace(/\s+/g, ' ').trim()
+  if (text.length <= max) return text
+  return text.slice(0, max) + '...'
 }
 
 // px 값에서 숫자 추출
@@ -129,18 +295,16 @@ export function getCSSSelector(element) {
     let selector = current.tagName.toLowerCase()
 
     if (current.id) {
-      selector = `#${current.id}`
+      selector = `#${cssEscape(current.id)}`
       parts.unshift(selector)
       break
     }
 
     if (current.className && typeof current.className === 'string') {
-      const classes = current.className.trim().split(/\s+/)
-      const meaningful = classes.find(c =>
-        !['flex', 'hidden', 'block', 'relative', 'absolute', 'inline-flex'].includes(c)
-      )
+      const classes = current.className.trim().split(/\s+/).filter(Boolean)
+      const meaningful = classes.find(c => !isUtilityClass(c))
       if (meaningful) {
-        selector += `.${meaningful}`
+        selector += `.${cssEscape(meaningful)}`
       }
     }
 
@@ -151,7 +315,7 @@ export function getCSSSelector(element) {
       )
       if (siblings.length > 1) {
         const index = siblings.indexOf(current) + 1
-        selector += `:nth-child(${index})`
+        selector += `:nth-of-type(${index})`
       }
     }
 
@@ -247,13 +411,40 @@ export function formatElementForAI(element, changes, index) {
     lines.push(`- 클래스: "${classList}"`)
   }
 
-  lines.push(`- 변경 내용:`)
+  const parentLayout = getParentLayout(element)
+  if (parentLayout) {
+    lines.push(`- 부모: ${parentLayout}`)
+  }
+
+  const snippet = getOuterHTMLSnippet(element)
+  if (snippet) {
+    lines.push(`- HTML: ${snippet}`)
+  }
+
+  if (changes._text) {
+    const from = truncateTrackedText(changes._text.original)
+    const to = truncateTrackedText(changes._text.current)
+    lines.push(`- 텍스트: "${from}" → "${to}"`)
+  }
+
+  const styleEntries = Object.entries(changes).filter(([prop]) => prop !== '_text')
+  if (styleEntries.length) {
+    lines.push(`- 변경 내용:`)
+  }
 
   const positionProps = ['left', 'top', 'right', 'bottom']
   const hasPositionChange = 'position' in changes
+  const currentTransform = changes.transform != null
+    ? changes.transform
+    : (original && original.transform)
 
-  Object.entries(changes).forEach(([prop, currentValue]) => {
+  styleEntries.forEach(([prop, currentValue]) => {
     const originalValue = original ? original[prop] : null
+
+    // Only emit properties actually written on element.style (skip computed-only sides)
+    if (!element.style || !element.style[prop]) {
+      return
+    }
 
     // Skip implicit auto→0px changes when position is changed
     if (hasPositionChange &&
@@ -263,17 +454,34 @@ export function formatElementForAI(element, changes, index) {
       return
     }
 
+    if (prop === 'transformOrigin' && !transformHasScale(currentTransform)) {
+      return
+    }
+
+    let displayOriginal = formatTrackedValue(prop, originalValue)
+    let displayCurrent = formatTrackedValue(prop, currentValue)
+    if (prop === 'transform') {
+      displayOriginal = formatTransformValue(originalValue)
+      displayCurrent = formatTransformValue(currentValue)
+      if (displayOriginal === displayCurrent) return
+    }
+
     const kebab = toKebabCase(prop)
     const delta = formatDelta(originalValue, currentValue)
     const description = describeChange(prop, originalValue, currentValue)
 
     if (originalValue !== null && originalValue !== undefined) {
       const deltaStr = delta ? ` (${delta}, ${description})` : ` (${description})`
-      lines.push(`  - ${kebab}: ${originalValue} → ${currentValue}${deltaStr}`)
+      lines.push(`  - ${kebab}: ${displayOriginal} → ${displayCurrent}${deltaStr}`)
     } else {
-      lines.push(`  - ${kebab}: ${currentValue} (${description})`)
+      lines.push(`  - ${kebab}: ${displayCurrent} (${description})`)
     }
   })
+
+  const finalInline = getFinalInlineStyles(element)
+  if (finalInline) {
+    lines.push(`- 최종 인라인 스타일: ${finalInline}`)
+  }
 
   return lines.join('\n')
 }
@@ -284,6 +492,11 @@ export function formatDeletedForAI(deleted, index) {
   const num = index !== undefined ? `### ${index}. ` : '### '
   lines.push(`${num}${deleted.identifier} 삭제`)
   lines.push(`- 해당 요소를 완전히 제거해주세요.`)
+
+  const snippet = deleted.outerHTML || getOuterHTMLSnippet(deleted.clonedNode)
+  if (snippet) {
+    lines.push(`- HTML: ${snippet}`)
+  }
 
   return lines.join('\n')
 }
@@ -326,6 +539,7 @@ export function formatAllForAI() {
 
   // 마무리 지시
   sections.push('위 변경사항을 해당 컴포넌트 파일에서 수정해주세요.')
+  sections.push('픽셀값을 그대로 쓰지 말고 프로젝트의 스타일 시스템(Tailwind 클래스, 디자인 토큰 등)에 맞게 변환하고, position:relative + left/top 오프셋은 의도(여백/정렬 변경)로 해석해 반영해주세요.')
 
   return sections.join('\n')
 }
@@ -394,6 +608,14 @@ export const AIFormatter = {
   formatAllForAI,
   copyToClipboard,
   copyAllChangesForAI,
+  formatTransformValue,
+  transformHasScale,
+  isUtilityClass,
+  getOuterHTMLSnippet,
+}
+
+if (typeof window !== 'undefined') {
+  window.AIFormatter = AIFormatter
 }
 
 export default AIFormatter

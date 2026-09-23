@@ -43,11 +43,9 @@ export function Selectable(visbug) {
       el,
       id,
       no_label:
-           tool === 'inspector'
-        || tool === 'guides'
+           tool === 'guides'
         || tool === 'margin'
-        || tool === 'move'
-        || tool === 'accessibility',
+        || tool === 'move',
     })
 
     $('visbug-metatip, visbug-ally').forEach(tip => {
@@ -76,17 +74,26 @@ export function Selectable(visbug) {
         .forEach(node =>
           node.remove())
 
-    selected.filter(node =>
+    const removed = selected.filter(node =>
       node.getAttribute('data-label-id') === id)
-      .forEach(node =>
-        $(node).attr({
-          'data-selected':      null,
-          'data-selected-hide': null,
-          'data-label-id':      null,
-          'data-pseudo-select':         null,
-          'data-measuring':     null,
-          'data-outward':       null,
-      }))
+
+    removed.forEach(node =>
+      $(node).attr({
+        'data-selected':      null,
+        'data-selected-hide': null,
+        'data-label-id':      null,
+        'data-pseudo-select':         null,
+        'data-measuring':     null,
+        'data-outward':       null,
+    }))
+
+    draggables = draggables.filter(d => {
+      if (removed.includes(d.el)) {
+        d.teardown && d.teardown()
+        return false
+      }
+      return true
+    })
 
     selected = selected.filter(node => node.getAttribute('data-label-id') !== id)
 
@@ -144,8 +151,12 @@ export function Selectable(visbug) {
     handles.length  = 0
     selected  = []
 
-    selected_after_delete.forEach(el =>
-      select(el))
+    selected_after_delete.forEach(el => {
+      if (!el || !el.isConnected) return
+      const tag = (el.tagName || '').toLowerCase()
+      if (tag === 'vis-bug' || tag.startsWith('visbug')) return
+      select(el)
+    })
   }
 
   const expandSelection = ({query, all = false}) => {

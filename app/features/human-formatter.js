@@ -1,7 +1,8 @@
 // 사람이 읽기 쉬운 형식으로 변경사항 포맷팅
 // Human-readable change formatter (Korean)
 
-import { ChangeTracker } from './change-tracker'
+import { ChangeTracker, formatTrackedValue } from './change-tracker'
+import { formatTransformValue } from './ai-formatter'
 
 // 요소의 읽기 쉬운 이름 생성
 function getReadableName(element) {
@@ -62,8 +63,23 @@ export function formatElementChanges(element, changes) {
 
   // transform 변경
   if (changes.transform && changes.transform !== 'none') {
-    lines.push(`  변형: ${changes.transform}`)
+    lines.push(`  변형: ${formatTransformValue(changes.transform)}`)
   }
+
+  if (changes._text) {
+    lines.push(`  텍스트: "${changes._text.original}" → "${changes._text.current}"`)
+  }
+
+  if (changes.color) lines.push(`  글자색: ${formatTrackedValue('color', changes.color)}`)
+  if (changes.backgroundColor) lines.push(`  배경색: ${formatTrackedValue('backgroundColor', changes.backgroundColor)}`)
+  if (changes.borderColor) lines.push(`  테두리색: ${formatTrackedValue('borderColor', changes.borderColor)}`)
+  if (changes.fontSize) lines.push(`  글자 크기: ${changes.fontSize}`)
+  if (changes.fontWeight) lines.push(`  글자 굵기: ${changes.fontWeight}`)
+  if (changes.lineHeight) lines.push(`  줄간격: ${changes.lineHeight}`)
+  if (changes.letterSpacing) lines.push(`  자간: ${changes.letterSpacing}`)
+  if (changes.textAlign) lines.push(`  정렬: ${changes.textAlign}`)
+  if (changes.borderRadius) lines.push(`  모서리: ${changes.borderRadius}`)
+  if (changes.opacity) lines.push(`  불투명도: ${changes.opacity}`)
 
   if (lines.length === 0) return null
 

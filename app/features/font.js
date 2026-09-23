@@ -1,5 +1,13 @@
 import hotkeys from 'hotkeys-js'
 import { metaKey, getStyle, showHideSelected } from '../utilities/'
+import { ChangeTracker } from './change-tracker'
+
+function applyTrackedStyle(el, style, value) {
+  ChangeTracker.captureOriginal(el)
+  el.style[style] = value
+  ChangeTracker.updateCurrent(el)
+  ChangeTracker.pushToUndoStack(el)
+}
 
 const key_events = 'up,down,left,right'
   .split(',')
@@ -37,18 +45,12 @@ export function Font({selection}) {
 
   hotkeys('cmd+b', e => {
     selection().forEach(el =>
-      el.style.fontWeight =
-        el.style.fontWeight == 'bold'
-          ? null
-          : 'bold')
+      applyTrackedStyle(el, 'fontWeight', el.style.fontWeight == 'bold' ? null : 'bold'))
   })
 
   hotkeys('cmd+i', e => {
     selection().forEach(el =>
-      el.style.fontStyle =
-        el.style.fontStyle == 'italic'
-          ? null
-          : 'italic')
+      applyTrackedStyle(el, 'fontStyle', el.style.fontStyle == 'italic' ? null : 'italic'))
   })
 
   return () => {
@@ -82,7 +84,7 @@ export function changeLeading(els, direction) {
           : payload.current + payload.amount
       }))
     .forEach(({el, style, value}) =>
-      el.style[style] = `${value}px`)
+      applyTrackedStyle(el, style, `${value}px`))
 }
 
 export function changeKerning(els, direction) {
@@ -108,7 +110,7 @@ export function changeKerning(els, direction) {
           : (payload.current + payload.amount).toFixed(2)
       }))
     .forEach(({el, style, value}) =>
-      el.style[style] = `${value <= -2 ? -2 : value}px`)
+      applyTrackedStyle(el, style, `${value <= -2 ? -2 : value}px`))
 }
 
 export function changeFontSize(els, direction) {
@@ -128,7 +130,7 @@ export function changeFontSize(els, direction) {
           : payload.current + payload.amount
       }))
     .forEach(({el, style, font_size}) =>
-      el.style[style] = `${font_size <= 6 ? 6 : font_size}px`)
+      applyTrackedStyle(el, style, `${font_size <= 6 ? 6 : font_size}px`))
 }
 
 const weightMap = {
@@ -156,10 +158,10 @@ export function changeFontWeight(els, direction) {
           : weightMap[payload.current] + 1
       }))
     .forEach(({el, style, value}) =>
-      el.style[style] = weightOptions[value < 0 ? 0 : value >= weightOptions.length
+      applyTrackedStyle(el, style, weightOptions[value < 0 ? 0 : value >= weightOptions.length
         ? weightOptions.length
         : value
-      ])
+      ]))
 }
 
 const alignMap = {
@@ -186,5 +188,5 @@ export function changeAlignment(els, direction) {
           : alignMap[payload.current] + 1
       }))
     .forEach(({el, style, value}) =>
-      el.style[style] = alignOptions[value < 0 ? 0 : value >= 2 ? 2: value])
+      applyTrackedStyle(el, style, alignOptions[value < 0 ? 0 : value >= 2 ? 2: value]))
 }

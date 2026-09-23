@@ -7,7 +7,7 @@ import puppeteer from 'puppeteer'
 // refactoring can verify nothing changes.
 // ===========================================================================
 
-const PORT = 3333
+const PORT = Number(process.env.E2E_PORT || 3300)
 
 const setupPptrTab = async t => {
   t.context.browser = await puppeteer.launch({
@@ -72,6 +72,42 @@ const unselectAllVia = async (page) => {
       visBug.selectorEngine.unselect_all()
     }
   })
+}
+
+const mountDragFixture = async (page, html) => {
+  await page.evaluate((markup) => {
+    const prev = document.getElementById('task-b-fixture')
+    if (prev) prev.remove()
+    const wrap = document.createElement('div')
+    wrap.id = 'task-b-fixture'
+    wrap.style.cssText = 'position:fixed;top:8px;left:8px;z-index:2147483000;'
+    wrap.innerHTML = markup
+    document.body.appendChild(wrap)
+  }, html)
+}
+
+const dispatchMouseGesture = async (page, { selector, dx = 0, dy = 0, surface } = {}) => {
+  await page.evaluate(({ selector, dx, dy, surface }) => {
+    const visbug = document.querySelector('vis-bug')
+    let target
+    if (surface === 'tool') {
+      target = visbug.$shadow.querySelector('li[data-tool]')
+    } else if (surface === 'toolbar') {
+      target = visbug.$shadow.querySelector('ol')
+    } else {
+      target = document.querySelector(selector)
+    }
+    if (!target) throw new Error('dispatchMouseGesture: target not found')
+    const r = target.getBoundingClientRect()
+    const x = r.x + r.width / 2
+    const y = r.y + r.height / 2
+    const opts = (cx, cy) => ({ bubbles: true, cancelable: true, clientX: cx, clientY: cy, view: window })
+    target.dispatchEvent(new MouseEvent('mousedown', opts(x, y)))
+    if (dx || dy) {
+      document.dispatchEvent(new MouseEvent('mousemove', opts(x + dx, y + dy)))
+    }
+    document.dispatchEvent(new MouseEvent('mouseup', opts(x + dx, y + dy)))
+  }, { selector, dx, dy, surface: surface || null })
 }
 
 test.beforeEach(async t => {
@@ -1083,8 +1119,6 @@ test('Selection: dblclick calls toolSelected("text") on visbug', async t => {
   const toolCalledWith = await page.evaluate(() => window.__toolSelectedCalled)
 
   // The on_dblclick handler calls visbug.toolSelected('text')
-  // Since 'text' tool doesn't exist in the toolbar_model, it may not switch
-  // but we verify the call was made with 'text'
   t.is(toolCalledWith, 'text', 'Double-clicking should call toolSelected("text")')
 })
 
@@ -1174,3 +1208,130 @@ test('Cleanup: selected element attributes are removed on unselect', async t => 
   t.false(after.hasSelected, 'data-selected should be removed after unselect')
   t.false(after.hasLabelId, 'data-label-id should be removed after unselect')
 })
+
+// ===========================================================================
+// Drag / ChangeTracker isolation (Task B)
+// ===========================================================================
+
+test('Drag: click without movement does not record ChangeTracker changes', async t => {
+  const { page } = t.context
+  await changeMode({ tool: 'guides', page })
+  await mountDragFixture(page, '<div id="click-only-target" style="width:120px;height:80px;background:orange;">click</div>')
+  await selectVia(page, '#click-only-target')
+  await page.waitForTimeout(100)
+  await page.evaluate(() => window.ChangeTracker.clearAll())
+
+  await dispatchMouseGesture(page, { selector: '#click-only-target', dx: 0, dy: 0 })
+  await page.waitForTimeout(100)
+
+  const hasChanges = await page.evaluate(() => window.ChangeTracker.hasChanges())
+  t.false(hasChanges, 'Click-only on a selected element must not create changes')
+})
+
+test('Drag: 30px drag records left/top for only that element', async t => {
+  const { page } = t.context
+  await changeMode({ tool: 'guides', page })
+  await mountDragFixture(page, '<div id="drag-only-target" style="width:120px;height:80px;background:teal;">drag</div>')
+  await selectVia(page, '#drag-only-target')
+  await page.waitForTimeout(100)
+  await page.evaluate(() => window.ChangeTracker.clearAll())
+
+  await dispatchMouseGesture(page, { selector: '#drag-only-target', dx: 30, dy: 0 })
+  await page.waitForTimeout(100)
+
+  const result = await page.evaluate(() => {
+    const entries = [...window.ChangeTracker.getAllChanges().entries()].map(([el, changes]) => ({
+      id: el.id,
+      tag: el.tagName,
+      changes,
+    }))
+    return entries
+  })
+
+  t.is(result.length, 1, 'Exactly one element should be recorded')
+  t.is(result[0].id, 'drag-only-target')
+  t.true('left' in result[0].changes || 'top' in result[0].changes, 'left/top change should be recorded')
+})
+
+test('Drag: toolbar click and toolbar drag do not track VIS-BUG or push undo', async t => {
+  const { page } = t.context
+  await changeMode({ tool: 'guides', page })
+  await page.evaluate(() => window.ChangeTracker.clearAll())
+
+  await dispatchMouseGesture(page, { surface: 'tool', dx: 0, dy: 0 })
+  await page.waitForTimeout(50)
+  await dispatchMouseGesture(page, { surface: 'toolbar', dx: 30, dy: 10 })
+  await page.waitForTimeout(100)
+
+  const result = await page.evaluate(() => {
+    const entries = [...window.ChangeTracker.getAllChanges().entries()].map(([el]) => el.tagName)
+    return {
+      tags: entries,
+      undo: window.ChangeTracker.undo(),
+    }
+  })
+
+  t.false(result.tags.includes('VIS-BUG'), 'Toolbar must not appear in getAllChanges')
+  t.is(result.undo, null, 'undo() should be null after toolbar click/drag')
+})
+
+test('Drag: unselected element does not move (no leaked listeners)', async t => {
+  const { page } = t.context
+  await changeMode({ tool: 'guides', page })
+  await mountDragFixture(page, '<div id="ghost-drag-target" style="width:120px;height:80px;background:purple;">ghost</div>')
+  await selectVia(page, '#ghost-drag-target')
+  await page.waitForTimeout(100)
+  await unselectAllVia(page)
+  await page.waitForTimeout(100)
+
+  const before = await page.evaluate(() => {
+    const el = document.getElementById('ghost-drag-target')
+    const r = el.getBoundingClientRect()
+    return { left: el.style.left, x: r.x }
+  })
+
+  await dispatchMouseGesture(page, { selector: '#ghost-drag-target', dx: 30, dy: 0 })
+  await page.waitForTimeout(100)
+
+  const after = await page.evaluate(() => {
+    const el = document.getElementById('ghost-drag-target')
+    const r = el.getBoundingClientRect()
+    return { left: el.style.left, x: r.x }
+  })
+
+  t.is(after.left, before.left, 'Unselected element style.left must not change')
+  t.true(Math.abs(after.x - before.x) < 1, 'Unselected element must not move on the screen')
+})
+
+test('Drag: nested parent+child selection moves the child by exactly 30px', async t => {
+  const { page } = t.context
+  await changeMode({ tool: 'guides', page })
+  await mountDragFixture(page, `
+    <div id="nest-parent" style="width:260px;height:180px;background:#ddd;position:relative;">
+      <div id="nest-child" style="width:80px;height:80px;background:#09f;margin:24px;"></div>
+    </div>
+  `)
+  await selectVia(page, '#nest-parent')
+  await selectVia(page, '#nest-child')
+  await page.waitForTimeout(100)
+  await page.evaluate(() => window.ChangeTracker.clearAll())
+
+  const before = await page.evaluate(() => {
+    const parent = document.getElementById('nest-parent').getBoundingClientRect()
+    const child = document.getElementById('nest-child').getBoundingClientRect()
+    return { parentX: parent.x, childX: child.x }
+  })
+
+  await dispatchMouseGesture(page, { selector: '#nest-child', dx: 30, dy: 0 })
+  await page.waitForTimeout(100)
+
+  const after = await page.evaluate(() => {
+    const parent = document.getElementById('nest-parent').getBoundingClientRect()
+    const child = document.getElementById('nest-child').getBoundingClientRect()
+    return { parentX: parent.x, childX: child.x }
+  })
+
+  t.true(Math.abs((after.childX - before.childX) - 30) < 2, `child should move 30px, moved ${after.childX - before.childX}`)
+  t.true(Math.abs(after.parentX - before.parentX) < 2, `parent should stay put, moved ${after.parentX - before.parentX}`)
+})
+

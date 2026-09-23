@@ -105,6 +105,20 @@ export async function copyScreenshotImage(dataUrl) {
     return { success: false, message: '이미지 데이터가 없습니다' }
   }
 
+  if (typeof window !== 'undefined' && window.isSecureContext === false) {
+    return {
+      success: false,
+      message: 'https 또는 localhost에서만 이미지 복사 가능',
+    }
+  }
+
+  if (typeof ClipboardItem === 'undefined' || !navigator.clipboard || !navigator.clipboard.write) {
+    return {
+      success: false,
+      message: 'https 또는 localhost에서만 이미지 복사 가능',
+    }
+  }
+
   try {
     const blob = dataUrlToBlob(dataUrl)
     await navigator.clipboard.write([

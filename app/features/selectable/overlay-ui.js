@@ -70,13 +70,20 @@ export function createOverlayUI({
     let parentObserver  = createObserver(el, {handle,label})
 
     observer.observe(el, { attributes: true })
-    parentObserver.observe(el.parentNode, { childList:true, subtree:true })
+    if (el.parentNode) {
+      parentObserver.observe(el.parentNode, { childList:true, subtree:true })
+    }
 
+    const disconnectObservers = () => {
+      observer.disconnect()
+      parentObserver.disconnect()
+    }
+
+    if (handle) {
+      onRemove(handle, disconnectObservers)
+    }
     if (label !== null) {
-      onRemove(label, () => {
-        observer.disconnect()
-        parentObserver.disconnect()
-      })
+      onRemove(label, disconnectObservers)
     }
   }
 

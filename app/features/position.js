@@ -1,7 +1,9 @@
 import $ from 'blingblingjs'
 import hotkeys from 'hotkeys-js'
-import { metaKey, getStyle, getSide, showHideSelected } from '../utilities/'
+import { metaKey, getStyle, getSide, showHideSelected, isOffBounds } from '../utilities/'
 import { ChangeTracker } from './change-tracker'
+
+const DRAG_THRESHOLD = 5
 
 const key_events = 'up,down,left,right'
   .split(',')
@@ -25,15 +27,12 @@ export function Position() {
   })
 
   const onNodesSelected = els => {
-    state.elements.forEach(el =>
-      el.teardown())
-
-    state.elements = els.map(el =>
-      draggable({el}))
+    // Selectable always attaches draggable; this tool only handles arrow-key nudges.
+    state.elements = els
   }
 
   const disconnect = () => {
-    state.elements.forEach(el => el.teardown())
+    state.elements = []
     hotkeys.unbind(key_events)
     hotkeys.unbind('up,down,left,right')
   }
@@ -44,8 +43,13 @@ export function Position() {
   }
 }
 
-export function draggable({el, surface = el, cursor = 'move', clickEvent, getSiblings = null}) {
-   const state = {
+export function draggable({el, surface = el, cursor = 'move', clickEvent, getSiblings = null, track}) {
+  const shouldTrack = track ?? !(
+    (el.tagName && el.tagName.toUpperCase() === 'VIS-BUG') ||
+    isOffBounds(el)
+  )
+
+  const state = {
     target: el,
     surface,
     mouse: {
@@ -58,8 +62,10 @@ export function draggable({el, surface = el, cursor = 'move', clickEvent, getSib
       y: 0,
     },
     travelDistance: 0,
-    siblings: [],  // 다중 선택된 형제 요소들
-    siblingOffsets: []  // 형제 요소들의 초기 위치
+    siblings: [],
+    siblingOffsets: [],
+    shiftKey: false,
+    dragStarted: false,
   }
 
   const setup = () => {
@@ -81,27 +87,47 @@ export function draggable({el, surface = el, cursor = 'move', clickEvent, getSib
   }
 
   const onMouseDown = e => {
-    // 요소 자체 또는 자식 요소 클릭도 허용 (Shift+드래그 버그 수정)
-    if(!el.contains(e.target) && !surface.contains(e.target)) return
+    if (!el.contains(e.target) && !surface.contains(e.target)) return
+
+    if (getSiblings) {
+      const selected = getSiblings()
+      const hits = selected.filter(node => node === e.target || node.contains(e.target))
+      if (hits.length) {
+        const deepest = hits.reduce((a, b) => (a.contains(b) ? b : a))
+        if (deepest !== el) return
+      }
+    }
+
     e.preventDefault()
 
-    // 변경 추적: 원본 스타일 캡처
-    ChangeTracker.captureOriginal(el)
+    state.mouse.x        = e.clientX
+    state.mouse.y        = e.clientY
+    state.mouse.down     = true
+    state.shiftKey       = e.shiftKey
+    state.dragStarted    = false
+    state.travelDistance = 0
+    state.siblings       = []
+    state.siblingOffsets = []
+  }
 
-    // 다중 선택된 형제 요소들 가져오기
-    state.siblings = getSiblings ? getSiblings().filter(sibling => sibling !== el) : []
+  const beginDrag = () => {
+    if (state.dragStarted) return
+    state.dragStarted = true
+
+    if (shouldTrack) ChangeTracker.captureOriginal(el)
+
+    const selected = getSiblings ? getSiblings() : []
+    state.siblings = filterCoMovers(el, selected)
     state.siblingOffsets = []
 
-    // Shift+드래그: absolute로 완전 독립 이동 (연관 요소 영향 없음)
-    if (e.shiftKey) {
+    if (state.shiftKey && !(el instanceof SVGElement)) {
       const rect = el.getBoundingClientRect()
       el.style.position = 'absolute'
       el.style.left = rect.left + window.scrollX + 'px'
       el.style.top = rect.top + window.scrollY + 'px'
 
-      // 형제 요소들도 absolute로 변환
       state.siblings.forEach(sibling => {
-        ChangeTracker.captureOriginal(sibling)
+        if (shouldTrack) ChangeTracker.captureOriginal(sibling)
         const sibRect = sibling.getBoundingClientRect()
         sibling.style.position = 'absolute'
         sibling.style.left = sibRect.left + window.scrollX + 'px'
@@ -109,18 +135,22 @@ export function draggable({el, surface = el, cursor = 'move', clickEvent, getSib
         sibling.style.willChange = 'top,left'
       })
     }
-    else if(getComputedStyle(el).position == 'static') {
-      el.style.position = 'relative'
+    else {
+      if (!(el instanceof SVGElement) && getComputedStyle(el).position == 'static') {
+        el.style.position = 'relative'
+      }
+      state.siblings.forEach(sibling => {
+        if (shouldTrack) ChangeTracker.captureOriginal(sibling)
+        if (!(sibling instanceof SVGElement) && getComputedStyle(sibling).position === 'static') {
+          sibling.style.position = 'relative'
+        }
+        sibling.style.willChange = 'top,left'
+      })
     }
+
     el.style.willChange = 'top,left'
 
-    // 형제 요소들의 초기 위치 캡처
     state.siblings.forEach(sibling => {
-      ChangeTracker.captureOriginal(sibling)
-      if (getComputedStyle(sibling).position === 'static') {
-        sibling.style.position = 'relative'
-      }
-      sibling.style.willChange = 'top,left'
       state.siblingOffsets.push({
         el: sibling,
         x: parseInt(getStyle(sibling, 'left')) || 0,
@@ -130,23 +160,16 @@ export function draggable({el, surface = el, cursor = 'move', clickEvent, getSib
 
     if (el instanceof SVGElement) {
       const translate = el.getAttribute('transform')
-
       const [ x, y ] = translate
         ? extractSVGTranslate(translate)
         : [0,0]
-
       state.element.x  = x
       state.element.y  = y
     }
     else {
-      state.element.x  = parseInt(getStyle(el, 'left'))
-      state.element.y  = parseInt(getStyle(el, 'top'))
+      state.element.x  = parseInt(getStyle(el, 'left')) || 0
+      state.element.y  = parseInt(getStyle(el, 'top')) || 0
     }
-
-    state.mouse.x        = e.clientX
-    state.mouse.y        = e.clientY
-    state.mouse.down     = true
-    state.travelDistance = 0
   }
 
   const onMouseUp = e => {
@@ -158,24 +181,29 @@ export function draggable({el, surface = el, cursor = 'move', clickEvent, getSib
     state.mouse.down = false
     el.style.willChange = null
 
-    // 변경 추적: 현재 스타일 업데이트 및 undo 스택에 저장
-    ChangeTracker.updateCurrent(el)
-    ChangeTracker.pushToUndoStack(el)
+    const treatAsClick = !state.dragStarted || state.travelDistance < DRAG_THRESHOLD
 
-    // 형제 요소들도 변경 추적
-    state.siblingOffsets.forEach(({el: sibling}) => {
-      sibling.style.willChange = null
-      ChangeTracker.updateCurrent(sibling)
-      ChangeTracker.pushToUndoStack(sibling)
-    })
+    if (state.dragStarted && shouldTrack) {
+      ChangeTracker.updateCurrent(el)
+      ChangeTracker.pushToUndoStack(el)
+
+      state.siblingOffsets.forEach(({el: sibling}) => {
+        sibling.style.willChange = null
+        ChangeTracker.updateCurrent(sibling)
+        ChangeTracker.pushToUndoStack(sibling)
+      })
+    }
+    else {
+      state.siblingOffsets.forEach(({el: sibling}) => {
+        sibling.style.willChange = null
+      })
+    }
 
     if (el instanceof SVGElement) {
       const translate = el.getAttribute('transform')
-
       const [ x, y ] = translate
         ? extractSVGTranslate(translate)
         : [0,0]
-
       state.element.x    = x
       state.element.y    = y
     }
@@ -184,19 +212,25 @@ export function draggable({el, surface = el, cursor = 'move', clickEvent, getSib
       state.element.y    = parseInt(el.style.top) || 0
     }
 
-    const treatAsClick = !state.travelDistance || state.travelDistance < 5
-    if (clickEvent && treatAsClick) clickEvent(e, surface);
-    state.travelDistance = 0 // reset after
+    if (clickEvent && treatAsClick) clickEvent(e, surface)
+    state.dragStarted    = false
+    state.travelDistance = 0
   }
 
   const onMouseMove = e => {
     if (!state.mouse.down) return
 
-    e.preventDefault()
-    e.stopPropagation()
-
     const deltaX = e.clientX - state.mouse.x
     const deltaY = e.clientY - state.mouse.y
+    state.travelDistance = Math.hypot(deltaX, deltaY)
+
+    if (!state.dragStarted) {
+      if (state.travelDistance < DRAG_THRESHOLD) return
+      beginDrag()
+    }
+
+    e.preventDefault()
+    e.stopPropagation()
 
     if (el instanceof SVGElement) {
       el.setAttribute('transform', `translate(
@@ -209,20 +243,26 @@ export function draggable({el, surface = el, cursor = 'move', clickEvent, getSib
       el.style.top  = state.element.y + deltaY + 'px'
     }
 
-    // 형제 요소들도 같은 거리만큼 이동
     state.siblingOffsets.forEach(({el: sibling, x, y}) => {
       sibling.style.left = x + deltaX + 'px'
       sibling.style.top  = y + deltaY + 'px'
     })
-
-    state.travelDistance += 1
   }
 
   setup()
-  el.teardown = teardown
 
-  return el
+  return { el, teardown }
 }
+
+const filterCoMovers = (el, selected) =>
+  selected.filter(sibling => {
+    if (sibling === el) return false
+    if (el.contains(sibling)) return false
+    if (sibling.contains(el)) return false
+    return !selected.some(other =>
+      other !== sibling && other !== el && other.contains(sibling)
+    )
+  })
 
 export function positionElement(els, direction) {
   els

@@ -2,6 +2,7 @@ import $ from 'blingblingjs'
 import { TinyColor } from '@ctrl/tinycolor'
 import Color from 'colorjs.io'
 import { getStyle, contrast_color } from '../utilities/'
+import { ChangeTracker } from './change-tracker'
 
 const state = {
   active_color: 'undefined',
@@ -22,28 +23,40 @@ export function ColorPicker(pallete, selectorEngine) {
   }
 
   fgInput.on('input', ({target:{value}}) => {
-    state.elements.map(el =>
-      el.style['color'] = value)
+    state.elements.map(el => {
+      ChangeTracker.captureOriginal(el)
+      el.style['color'] = value
+      ChangeTracker.updateCurrent(el)
+      ChangeTracker.pushToUndoStack(el)
+    })
 
     foregroundPicker[0].style.setProperty(`--contextual_color`, value)
   })
 
   bgInput.on('input', ({target:{value}}) => {
-    state.elements.map(el =>
+    state.elements.map(el => {
+      ChangeTracker.captureOriginal(el)
       el.style[el instanceof SVGElement
         ? 'fill'
         : 'backgroundColor'
-      ] = value)
+      ] = value
+      ChangeTracker.updateCurrent(el)
+      ChangeTracker.pushToUndoStack(el)
+    })
 
     backgroundPicker[0].style.setProperty(`--contextual_color`, value)
   })
 
   boInput.on('input', ({target:{value}}) => {
-    state.elements.map(el =>
+    state.elements.map(el => {
+      ChangeTracker.captureOriginal(el)
       el.style[el instanceof SVGElement
         ? 'stroke'
         : 'borderColor'
-      ] = value)
+      ] = value
+      ChangeTracker.updateCurrent(el)
+      ChangeTracker.pushToUndoStack(el)
+    })
 
     borderPicker[0].style.setProperty(`--contextual_color`, value)
   })

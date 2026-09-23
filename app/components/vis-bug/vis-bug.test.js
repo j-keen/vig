@@ -11,11 +11,11 @@ test('Should have guides as default tool', async t => {
   t.pass()
 })
 
-test('Should have 13 tools', async t => {
+test('Should have 10 tools', async t => {
   const { page } = t.context
   const tools = await page.evaluate(`document.querySelector('vis-bug').$shadow.querySelectorAll('ol:first-of-type > li').length`)
 
-  t.is(tools, 13)
+  t.is(tools, 10)
   t.pass()
 })
 
