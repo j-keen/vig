@@ -1,5 +1,13 @@
 // 색상 팔레트 팝오버 - 텍스트 툴바의 글자색/배경색 스와치에서 열림
 // A small floating popover: page-color chips + native color input + eyedropper.
+//
+// Live-preview contract (wired by the caller, e.g. text-toolbar.element.js):
+//   onPreview(hex) - called continuously while hovering a chip or dragging
+//                    the native color input; should only preview, no commit.
+//   onCommit(hex)  - called exactly once when the user picks a value (chip
+//                    click, native input "change"/release, eyedropper pick).
+//   onCancel()     - called when a hover/drag ends without a pick (chip
+//                    mouseleave, Escape, closing without choosing).
 
 import { TinyColor } from '@ctrl/tinycolor'
 import { collectPageColors } from '../../utilities/palette'
@@ -13,9 +21,11 @@ export class PalettePopover extends HTMLElement {
   constructor() {
     super()
     this.$shadow = this.attachShadow({ mode: 'closed' })
-    this.onPick = null
+    this.onPreview = null
+    this.onCommit = null
+    this.onCancel = null
+    this._picked = false
     this._boundOutsideClick = this._handleOutsideClick.bind(this)
-    this._boundEyedropperClick = null
   }
 
   connectedCallback() {
@@ -28,7 +38,15 @@ export class PalettePopover extends HTMLElement {
     this.style.zIndex = '2147483647'
     this.style.display = 'none'
 
-    this.$shadow.addEventListener('keydown', e => { if (!isUndoRedoCombo(e)) e.stopPropagation() })
+    this.$shadow.addEventListener('keydown', e => {
+      if (isUndoRedoCombo(e)) return
+      if (e.key === 'Escape') {
+        this._cancel()
+        this.hide()
+        return
+      }
+      e.stopPropagation()
+    })
     this.$shadow.addEventListener('keyup', e => { if (!isUndoRedoCombo(e)) e.stopPropagation() })
     this.$shadow.addEventListener('click', e => e.stopPropagation())
 
@@ -36,11 +54,29 @@ export class PalettePopover extends HTMLElement {
     swatches.addEventListener('click', e => {
       const chip = e.target.closest('[data-hex]')
       if (!chip) return
-      this._pick(chip.dataset.hex)
+      this._commit(chip.dataset.hex)
+      this.hide()
+    })
+    swatches.addEventListener('mouseover', e => {
+      const chip = e.target.closest('[data-hex]')
+      if (!chip) return
+      this._preview(chip.dataset.hex)
+    })
+    swatches.addEventListener('mouseout', e => {
+      const chip = e.target.closest('[data-hex]')
+      if (!chip) return
+      // don't cancel if we're just moving onto another chip
+      if (e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('[data-hex]')) return
+      this._cancel()
     })
 
     const colorInput = this.$shadow.querySelector('.native-color')
-    colorInput.addEventListener('input', e => this._pick(e.target.value))
+    colorInput.addEventListener('input', e => {
+      this._preview(e.target.value)
+    })
+    colorInput.addEventListener('change', e => {
+      this._commit(e.target.value)
+    })
 
     const eyedropperBtn = this.$shadow.querySelector('.eyedropper')
     eyedropperBtn.addEventListener('click', () => this._pickWithEyedropper())
@@ -55,7 +91,7 @@ export class PalettePopover extends HTMLElement {
       <div class="popover">
         <div class="swatches"></div>
         <div class="row">
-          <input class="native-color" type="color" title="색상 선택" value="#000000" />
+          <input class="native-color" type="color" title="색상 선택 (드래그하는 동안 실시간 미리보기)" value="#000000" />
           <button class="eyedropper" title="스포이드로 페이지 색상 추출" type="button">스포이드</button>
         </div>
       </div>
@@ -72,14 +108,26 @@ export class PalettePopover extends HTMLElement {
     }
 
     swatches.innerHTML = colors
-      .map(hex => `<button class="swatch" type="button" data-hex="${hex}" style="background:${hex}" title="${hex}"></button>`)
+      .map(hex => `<button class="swatch" type="button" data-hex="${hex}" style="background:${hex}" title="${hex} (클릭하여 적용)"></button>`)
       .join('')
   }
 
-  _pick(hex) {
-    if (this.onPick) this.onPick(hex)
+  _preview(hex) {
+    if (this.onPreview) this.onPreview(hex)
     const colorInput = this.$shadow.querySelector('.native-color')
     if (colorInput) colorInput.value = hex
+  }
+
+  _commit(hex) {
+    this._picked = true
+    if (this.onCommit) this.onCommit(hex)
+    const colorInput = this.$shadow.querySelector('.native-color')
+    if (colorInput) colorInput.value = hex
+  }
+
+  _cancel() {
+    if (this._picked) return
+    if (this.onCancel) this.onCancel()
   }
 
   async _pickWithEyedropper() {
@@ -87,7 +135,10 @@ export class PalettePopover extends HTMLElement {
       try {
         const dropper = new window.EyeDropper()
         const result = await dropper.open()
-        if (result && result.sRGBHex) this._pick(result.sRGBHex)
+        if (result && result.sRGBHex) {
+          this._commit(result.sRGBHex)
+          this.hide()
+        }
       } catch (e) {
         // user cancelled - noop
       }
@@ -110,7 +161,7 @@ export class PalettePopover extends HTMLElement {
       const bg = new TinyColor(style.backgroundColor)
       const chosen = bg.getAlpha() > 0 ? bg : new TinyColor(style.color)
 
-      if (chosen.isValid) this._pick(`#${chosen.toHex()}`)
+      if (chosen.isValid) this._commit(`#${chosen.toHex()}`)
     }
 
     document.addEventListener('click', handler, true)
@@ -123,6 +174,7 @@ export class PalettePopover extends HTMLElement {
   }
 
   show(x, y, currentColor) {
+    this._picked = false
     this._renderSwatches()
 
     const colorInput = this.$shadow.querySelector('.native-color')
@@ -137,6 +189,7 @@ export class PalettePopover extends HTMLElement {
   }
 
   hide() {
+    if (!this._picked) this._cancel()
     this.style.display = 'none'
     document.removeEventListener('mousedown', this._boundOutsideClick, true)
   }

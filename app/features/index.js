@@ -20,4 +20,4 @@ export { AIFormatter } from './ai-formatter'
 export { HumanFormatter } from './human-formatter'
 export { DepthSelector } from './depth-selector'
 export { Notes } from './notes'
-
+export { PropHint, showPropHint, hidePropHint, getPropLabel } from './prop-hint'

@@ -104,6 +104,7 @@ export const isOffBounds = node => {
     || node.closest('visbug-text-toolbar')
     || node.closest('visbug-note')
     || node.closest('visbug-palette')
+    || node.closest('visbug-prop-hint')
   )
 }
 

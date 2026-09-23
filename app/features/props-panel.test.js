@@ -124,3 +124,142 @@ test.serial('Props panel: shows on select with correct width, edits width via En
   })
   t.true(afterUnselect, 'panel should hide again after unselect_all')
 })
+
+test.serial('Props panel: dragging the W slider live-updates width and commits exactly one undo entry on mouseup', async t => {
+  const { page } = t.context
+
+  await page.evaluate(() => {
+    window.ChangeTracker.clearAll()
+    const el = document.createElement('div')
+    el.id = 'props-target-slider'
+    el.style.cssText = 'position:fixed;left:50px;top:50px;width:150px;height:60px;z-index:1;background:#eee;'
+    document.body.appendChild(el)
+  })
+
+  await page.evaluate(() => {
+    const el = document.getElementById('props-target-slider')
+    document.querySelector('vis-bug').selectorEngine.select(el)
+  })
+  await page.waitForTimeout(200)
+
+  const before = await page.evaluate(() => window.ChangeTracker.getUndoStackSnapshot().length)
+
+  const sliderBox = await page.evaluate(() => {
+    const panel = document.querySelector('visbug-props')
+    const el = panel.$shadow.querySelector('.range-input[data-prop="width"]')
+    const r = el.getBoundingClientRect()
+    return { x: r.x, y: r.y, width: r.width, height: r.height }
+  })
+
+  const y = sliderBox.y + sliderBox.height / 2
+  const startX = sliderBox.x + sliderBox.width * 0.1
+  const midX = sliderBox.x + sliderBox.width * 0.6
+
+  await page.mouse.move(startX, y)
+  await page.mouse.down()
+  await page.mouse.move(midX, y, { steps: 10 })
+  await page.waitForTimeout(50)
+
+  const liveWidth = await page.evaluate(() =>
+    document.getElementById('props-target-slider').style.width)
+  console.log('[props-panel e2e] live width during slider drag (mouse still down)', liveWidth)
+  t.not(liveWidth, '150px', 'width should already have changed live while the slider is being dragged')
+
+  const undoWhileDragging = await page.evaluate(() => window.ChangeTracker.getUndoStackSnapshot().length)
+  t.is(undoWhileDragging, before, 'no undo entry should be pushed yet while the drag is still in progress')
+
+  await page.mouse.up()
+  await page.waitForTimeout(150)
+
+  const after = await page.evaluate(() => window.ChangeTracker.getUndoStackSnapshot().length)
+  t.is(after, before + 1, 'exactly one undo entry should be pushed for the whole drag gesture')
+})
+
+test.serial('Props panel: focusing the W input shows the prop hint overlay; blur clears it', async t => {
+  const { page } = t.context
+
+  await page.evaluate(() => {
+    window.ChangeTracker.clearAll()
+    const el = document.createElement('div')
+    el.id = 'props-target-hint'
+    el.style.cssText = 'position:fixed;left:50px;top:50px;width:150px;height:60px;z-index:1;background:#eee;'
+    document.body.appendChild(el)
+  })
+
+  await page.evaluate(() => {
+    const el = document.getElementById('props-target-hint')
+    document.querySelector('vis-bug').selectorEngine.select(el)
+  })
+  await page.waitForTimeout(200)
+
+  await page.evaluate(() => {
+    const panel = document.querySelector('visbug-props')
+    const input = panel.$shadow.querySelector('.num-input[data-prop="width"]')
+    input.focus()
+  })
+  await page.waitForTimeout(80)
+
+  const hintLengthAfterFocus = await page.evaluate(() => {
+    const hint = document.querySelector('visbug-prop-hint')
+    return hint ? hint.innerHTML.length : 0
+  })
+  console.log('[props-panel e2e] prop hint innerHTML length after focus', hintLengthAfterFocus)
+  t.true(hintLengthAfterFocus > 0, 'prop hint overlay should render content while the W input is focused')
+
+  await page.evaluate(() => {
+    const panel = document.querySelector('visbug-props')
+    const input = panel.$shadow.querySelector('.num-input[data-prop="width"]')
+    input.blur()
+  })
+  await page.waitForTimeout(300) // scheduleHideHint의 120ms 지연보다 넉넉히 대기
+
+  const hintLengthAfterBlur = await page.evaluate(() => {
+    const hint = document.querySelector('visbug-prop-hint')
+    return hint ? hint.innerHTML.length : 0
+  })
+  t.is(hintLengthAfterBlur, 0, 'prop hint overlay should clear shortly after blur')
+})
+
+test.serial('Props panel: W stepper click increases width by 1px, Shift+click by 10px', async t => {
+  const { page } = t.context
+
+  await page.evaluate(() => {
+    window.ChangeTracker.clearAll()
+    const el = document.createElement('div')
+    el.id = 'props-target-stepper'
+    el.style.cssText = 'position:fixed;left:50px;top:50px;width:150px;height:60px;z-index:1;background:#eee;'
+    document.body.appendChild(el)
+  })
+
+  await page.evaluate(() => {
+    const el = document.getElementById('props-target-stepper')
+    document.querySelector('vis-bug').selectorEngine.select(el)
+  })
+  await page.waitForTimeout(200)
+
+  const stepUpHandle = (await page.evaluateHandle(() => {
+    const panel = document.querySelector('visbug-props')
+    const row = panel.$shadow.querySelector('.num-row[data-row-prop="width"]')
+    return row.querySelector('.step-btn[data-dir="1"]')
+  })).asElement()
+  t.truthy(stepUpHandle, 'the W stepper up button should be found inside the panel shadow root')
+
+  await stepUpHandle.click()
+  await page.waitForTimeout(50)
+
+  const afterOneClick = await page.evaluate(() =>
+    document.getElementById('props-target-stepper').style.width)
+  t.is(afterOneClick, '151px', 'a single stepper click should increase width by 1px')
+
+  await page.keyboard.down('Shift')
+  await stepUpHandle.click()
+  await page.keyboard.up('Shift')
+  await page.waitForTimeout(50)
+
+  const afterShiftClick = await page.evaluate(() =>
+    document.getElementById('props-target-stepper').style.width)
+  t.is(afterShiftClick, '161px', 'a shift+click on the stepper should increase width by 10px')
+
+  const undoCount = await page.evaluate(() => window.ChangeTracker.getUndoStackSnapshot().length)
+  t.is(undoCount, 2, 'each stepper click is its own committed gesture (one undo entry per click)')
+})

@@ -101,6 +101,7 @@ export default class VisBug extends HTMLElement {
     this.propsPanel && this.propsPanel.remove()
     this.notesFeature && this.notesFeature()
     this.textToolbarFeature && this.textToolbarFeature()
+    Features.PropHint && Features.PropHint.teardownPropHint()
     this.cleanup()
     this.selectorEngine.disconnect()
     hotkeys.unbind(
