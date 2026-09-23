@@ -1,4 +1,5 @@
 import { ChangeTracker } from './change-tracker'
+import { AIFormatter } from './ai-formatter'
 
 // 스크린샷 촬영 및 저장
 export async function takeScreenshot() {
@@ -85,6 +86,124 @@ export async function captureScreen() {
       resolve({ success: false, error: 'Timeout' })
     }, 5000)
   })
+}
+
+// 둥근 사각형 경로 그리기 (헬퍼)
+function traceRoundedRect(ctx, x, y, w, h, r) {
+  const radius = Math.max(0, Math.min(r, w / 2, h / 2))
+  ctx.beginPath()
+  ctx.moveTo(x + radius, y)
+  ctx.arcTo(x + w, y, x + w, y + h, radius)
+  ctx.arcTo(x + w, y + h, x, y + h, radius)
+  ctx.arcTo(x, y + h, x, y, radius)
+  ctx.arcTo(x, y, x + w, y, radius)
+  ctx.closePath()
+}
+
+// 요소 하나에 대한 빨간 테두리 + 번호 배지 그리기
+function drawAnnotationMark(ctx, { x, y, w, h, index }) {
+  ctx.save()
+  ctx.strokeStyle = '#ff0000'
+  ctx.lineWidth = 2
+  traceRoundedRect(ctx, x, y, w, h, 4)
+  ctx.stroke()
+
+  const label = String(index)
+  ctx.font = 'bold 12px sans-serif'
+  const textWidth = ctx.measureText(label).width
+  const badgeSize = Math.max(16, textWidth + 8)
+  const badgeX = Math.max(0, x)
+  const badgeY = Math.max(0, y - badgeSize - 2)
+
+  ctx.fillStyle = '#ff0000'
+  traceRoundedRect(ctx, badgeX, badgeY, badgeSize, badgeSize, 4)
+  ctx.fill()
+
+  ctx.fillStyle = '#ffffff'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(label, badgeX + badgeSize / 2, badgeY + badgeSize / 2 + 1)
+  ctx.restore()
+}
+
+// 순수 함수: 스크린샷 dataUrl 위에 변경 요소의 사각형 + 번호를 그려 새 dataUrl로 반환
+// rects: [{ x, y, w, h, index }] - 캡처 이미지 좌표계 기준
+export function annotateImage(dataUrl, rects = []) {
+  return new Promise((resolve, reject) => {
+    if (!dataUrl) {
+      reject(new Error('이미지 데이터가 없습니다'))
+      return
+    }
+
+    const img = new Image()
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = img.naturalWidth || img.width
+        canvas.height = img.naturalHeight || img.height
+
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0)
+
+        rects.forEach(rect => {
+          if (!rect || rect.w <= 0 || rect.h <= 0) return
+          drawAnnotationMark(ctx, rect)
+        })
+
+        resolve(canvas.toDataURL('image/png'))
+      } catch (err) {
+        reject(err)
+      }
+    }
+    img.onerror = () => reject(new Error('이미지를 불러오지 못했습니다'))
+    img.src = dataUrl
+  })
+}
+
+// 뷰포트와 교차하는 변경/메모 요소들의 사각형 목록 생성 (ai-formatter의 번호 매김과 동일한 순서)
+function buildAnnotationRects() {
+  const entries = AIFormatter.getOrderedChangeEntries()
+  if (typeof window === 'undefined') return []
+
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+
+  return entries
+    .map(({ element, index }) => {
+      if (!element || !element.isConnected || typeof element.getBoundingClientRect !== 'function') {
+        return null
+      }
+
+      const rect = element.getBoundingClientRect()
+      if (rect.width <= 0 || rect.height <= 0) return null
+      if (rect.right <= 0 || rect.bottom <= 0 || rect.left >= vw || rect.top >= vh) return null
+
+      const x = Math.max(0, rect.left)
+      const y = Math.max(0, rect.top)
+      const w = Math.min(rect.right, vw) - x
+      const h = Math.min(rect.bottom, vh) - y
+
+      return { x, y, w, h, index }
+    })
+    .filter(Boolean)
+}
+
+// 뷰포트 캡처 + 변경 요소 표시(주석) 처리를 한번에 수행
+export async function captureAnnotated() {
+  const capture = await captureScreen()
+  if (!capture.success) {
+    return { success: false, message: '캡처에 실패했습니다' }
+  }
+
+  const rects = buildAnnotationRects()
+
+  try {
+    const dataUrl = await annotateImage(capture.dataUrl, rects)
+    return { success: true, dataUrl, filename: capture.filename }
+  } catch (err) {
+    console.error('스크린샷 표시 처리 실패:', err)
+    return { success: false, message: '스크린샷 표시 처리에 실패했습니다' }
+  }
 }
 
 // data URL을 Blob으로 변환
@@ -193,4 +312,19 @@ function flashScreen() {
 export function Screenshot(node, page) {
   takeScreenshot()
   return () => {}
+}
+
+// E2E 테스트/디버깅용 - window에 노출 (도구 함수 Screenshot과 이름 충돌을 피해 ScreenshotAPI로 노출)
+export const ScreenshotAPI = {
+  takeScreenshot,
+  captureScreen,
+  copyScreenshotImage,
+  copyScreenshotPath,
+  captureAndCopyImage,
+  annotateImage,
+  captureAnnotated,
+}
+
+if (typeof window !== 'undefined') {
+  window.ScreenshotAPI = ScreenshotAPI
 }

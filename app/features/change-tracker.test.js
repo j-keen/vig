@@ -540,3 +540,181 @@ test('trackDeletion stores clonedNode for AI HTML snippets', async t => {
   t.true(result.hasClonedNode, 'deletedElements should keep clonedNode')
   t.true(result.html.includes('Close'), 'clonedNode should preserve element HTML')
 })
+
+test('setNote/getNote track a note-only element as a change without style edits', async t => {
+  const { page } = t.context
+
+  const result = await page.evaluate(() => {
+    window.ChangeTracker.clearAll()
+
+    const el = document.createElement('div')
+    el.id = 'note-only'
+    document.body.appendChild(el)
+
+    const beforeHasChanges = window.ChangeTracker.hasChanges()
+
+    window.ChangeTracker.setNote(el, '  더 눈에 띄게  ')
+
+    const note = window.ChangeTracker.getNote(el)
+    const hasChanges = window.ChangeTracker.hasChanges()
+    const trackedCount = window.ChangeTracker.getTrackedCount()
+
+    const allChanges = window.ChangeTracker.getAllChanges()
+    let foundNote = null
+    for (const [element, changes] of allChanges) {
+      if (element === el) foundNote = changes._note
+    }
+
+    document.body.removeChild(el)
+    window.ChangeTracker.clearAll()
+
+    return { beforeHasChanges, note, hasChanges, trackedCount, foundNote }
+  })
+
+  t.false(result.beforeHasChanges, 'no note yet -> no changes')
+  t.is(result.note, '더 눈에 띄게', 'note should be trimmed')
+  t.true(result.hasChanges, 'a note alone should count as a change')
+  t.is(result.trackedCount, 1, 'note-only element should count as one tracked item')
+  t.is(result.foundNote, '더 눈에 띄게', 'getAllChanges should surface _note')
+})
+
+test('setNote with empty text clears the note, removeTrackedById clears it too', async t => {
+  const { page } = t.context
+
+  const result = await page.evaluate(() => {
+    window.ChangeTracker.clearAll()
+
+    const el = document.createElement('div')
+    el.id = 'note-clear'
+    document.body.appendChild(el)
+
+    window.ChangeTracker.setNote(el, 'hello')
+    window.ChangeTracker.setNote(el, '   ')
+    const noteAfterClear = window.ChangeTracker.getNote(el)
+    const countAfterClear = window.ChangeTracker.getTrackedCount()
+
+    window.ChangeTracker.setNote(el, 'hello again')
+    const id = window.ChangeTracker.getElementId(el)
+    window.ChangeTracker.removeTrackedById(id)
+    const noteAfterRemove = window.ChangeTracker.getNote(el)
+
+    document.body.removeChild(el)
+    window.ChangeTracker.clearAll()
+
+    return { noteAfterClear, countAfterClear, noteAfterRemove }
+  })
+
+  t.is(result.noteAfterClear, null, 'blank text should clear the note')
+  t.is(result.countAfterClear, 0, 'no tracked items once note is cleared')
+  t.is(result.noteAfterRemove, null, 'removeTrackedById should also drop the note')
+})
+
+test('setPageNote/getPageNote and clearAll reset page-level note', async t => {
+  const { page } = t.context
+
+  const result = await page.evaluate(() => {
+    window.ChangeTracker.clearAll()
+
+    const before = window.ChangeTracker.getPageNote()
+    window.ChangeTracker.setPageNote('  전체적으로 더 모던하게  ')
+    const after = window.ChangeTracker.getPageNote()
+    const hasChanges = window.ChangeTracker.hasChanges()
+    const trackedCount = window.ChangeTracker.getTrackedCount()
+
+    window.ChangeTracker.clearAll()
+    const afterClear = window.ChangeTracker.getPageNote()
+
+    return { before, after, hasChanges, trackedCount, afterClear }
+  })
+
+  t.is(result.before, null)
+  t.is(result.after, '전체적으로 더 모던하게')
+  t.true(result.hasChanges)
+  t.is(result.trackedCount, 1, 'page note should count as one item')
+  t.is(result.afterClear, null, 'clearAll should reset the page note')
+})
+
+test('getUndoStackSnapshot exposes commits without mutating the real undo stack', async t => {
+  const { page } = t.context
+
+  const result = await page.evaluate(() => {
+    window.ChangeTracker.clearAll()
+
+    const el = document.createElement('div')
+    el.style.width = '100px'
+    document.body.appendChild(el)
+
+    window.ChangeTracker.captureOriginal(el)
+    el.style.width = '200px'
+    window.ChangeTracker.updateCurrent(el)
+    window.ChangeTracker.pushToUndoStack(el)
+
+    const snapshotBefore = window.ChangeTracker.getUndoStackSnapshot()
+    // Calling it again / reading it should not consume the stack
+    const snapshotAgain = window.ChangeTracker.getUndoStackSnapshot()
+
+    const undoResult = window.ChangeTracker.undo()
+    const widthAfterUndo = el.style.width
+
+    document.body.removeChild(el)
+    window.ChangeTracker.clearAll()
+
+    return {
+      lengthBefore: snapshotBefore.length,
+      lengthAgain: snapshotAgain.length,
+      firstType: snapshotBefore[0] && snapshotBefore[0].type,
+      undoType: undoResult && undoResult.type,
+      widthAfterUndo,
+    }
+  })
+
+  t.is(result.lengthBefore, 1)
+  t.is(result.lengthAgain, 1, 'reading the snapshot twice should not pop entries')
+  t.is(result.firstType, 'style')
+  t.is(result.undoType, 'style', 'the real undo stack should still work after snapshotting')
+  t.is(result.widthAfterUndo, '100px')
+})
+
+test('toggleCompareMode/restoreFromCompare cover text changes without altering tracked state', async t => {
+  const { page } = t.context
+
+  const result = await page.evaluate(() => {
+    window.ChangeTracker.clearAll()
+
+    const el = document.createElement('div')
+    el.id = 'compare-text'
+    el.textContent = 'Original text'
+    document.body.appendChild(el)
+
+    window.ChangeTracker.captureOriginal(el)
+    window.ChangeTracker.captureOriginalText(el)
+
+    el.style.width = '200px'
+    window.ChangeTracker.updateCurrent(el)
+
+    el.textContent = 'Changed text'
+    window.ChangeTracker.updateCurrentText(el)
+
+    const beforeChanges = JSON.stringify([...window.ChangeTracker.getAllChanges()].map(([, c]) => c))
+
+    const saved = window.ChangeTracker.toggleCompareMode(true)
+    const duringWidth = el.style.width
+    const duringText = el.textContent
+
+    window.ChangeTracker.restoreFromCompare(saved)
+    const afterWidth = el.style.width
+    const afterText = el.textContent
+    const afterChanges = JSON.stringify([...window.ChangeTracker.getAllChanges()].map(([, c]) => c))
+
+    document.body.removeChild(el)
+    window.ChangeTracker.clearAll()
+
+    return { beforeChanges, duringWidth, duringText, afterWidth, afterText, afterChanges }
+  })
+
+  t.is(result.duringWidth, '', 'compare mode should show original (empty inline) width')
+  t.is(result.duringText, 'Original text', 'compare mode should show original text')
+  t.is(result.afterWidth, '200px', 'restoring should bring back the changed width')
+  t.is(result.afterText, 'Changed text', 'restoring should bring back the changed text')
+  t.is(result.afterChanges, result.beforeChanges, 'getAllChanges should be unaffected by a preview cycle')
+})

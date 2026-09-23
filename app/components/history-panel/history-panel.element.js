@@ -5,7 +5,7 @@ import { HumanFormatter } from '../../features/human-formatter'
 import { ChangeTracker } from '../../features/change-tracker'
 import { HistoryPanelStyles } from './history-panel.styles'
 import { AIFormatter } from '../../features/ai-formatter'
-import { copyScreenshotImage, copyScreenshotPath } from '../../features/screenshot'
+import { copyScreenshotImage, copyScreenshotPath, captureAnnotated } from '../../features/screenshot'
 
 export class HistoryPanel extends HTMLElement {
   constructor() {
@@ -15,9 +15,21 @@ export class HistoryPanel extends HTMLElement {
     this.isDragging = false
     this.dragOffset = { x: 0, y: 0 }
     this.updateInterval = null
-    this.isCompareMode = false
+
+    // 원본 보기(비교) 상태 - 누르고 있기(hold) + `\` 토글 두 입력을 함께 지원
+    this._compareHold = false
+    this._compareToggle = false
+    this._compareApplied = false
     this.savedCompareStates = null
+
+    // 히스토리 항목 호버 타임트래블 미리보기 상태
+    this._hoveredItem = null
+    this._activePreview = null
+
     this.showingHelp = false
+
+    this._onDocumentMouseUp = this._onDocumentMouseUp.bind(this)
+    this._onDocumentKeydown = this._onDocumentKeydown.bind(this)
   }
 
   connectedCallback() {
@@ -26,6 +38,10 @@ export class HistoryPanel extends HTMLElement {
     this.setupDragging()
     this.setupButtons()
     this.startAutoUpdate()
+
+    document.addEventListener('mouseup', this._onDocumentMouseUp)
+    document.addEventListener('touchend', this._onDocumentMouseUp)
+    document.addEventListener('keydown', this._onDocumentKeydown)
 
     // 초기 위치 설정
     this.style.position = 'fixed'
@@ -40,7 +56,57 @@ export class HistoryPanel extends HTMLElement {
 
   disconnectedCallback() {
     this.stopAutoUpdate()
+    this._clearPreview()
+    if (this._compareApplied) this._setCompareApplied(false)
+    document.removeEventListener('mouseup', this._onDocumentMouseUp)
+    document.removeEventListener('touchend', this._onDocumentMouseUp)
+    document.removeEventListener('keydown', this._onDocumentKeydown)
     this.hidePopover && this.hidePopover()
+  }
+
+  // 마우스/터치 릴리즈 - 누르고 있던 원본 보기 해제
+  _onDocumentMouseUp() {
+    if (this._compareHold) {
+      this._compareHold = false
+      this._syncCompareVisual()
+    }
+  }
+
+  // `\` 키 - 원본 보기 토글 (입력창에 포커스가 있을 때는 무시)
+  _onDocumentKeydown(e) {
+    if (e.key !== '\\') return
+    const target = e.target
+    const tag = target && target.tagName
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || (target && target.isContentEditable)) return
+
+    e.preventDefault()
+    this._compareToggle = !this._compareToggle
+    this._syncCompareVisual()
+  }
+
+  // 원본 보기 상태(hold || toggle)에 맞춰 실제 적용 여부를 동기화
+  _syncCompareVisual() {
+    const shouldBeActive = this._compareHold || this._compareToggle
+    if (shouldBeActive !== this._compareApplied) {
+      this._setCompareApplied(shouldBeActive)
+    }
+  }
+
+  _setCompareApplied(active) {
+    const btnCompare = this.$shadow.querySelector('.btn-compare')
+
+    if (active) {
+      this.savedCompareStates = ChangeTracker.toggleCompareMode(true)
+      this._compareApplied = true
+      if (btnCompare) btnCompare.classList.add('active')
+    } else {
+      if (this.savedCompareStates) {
+        ChangeTracker.restoreFromCompare(this.savedCompareStates)
+        this.savedCompareStates = null
+      }
+      this._compareApplied = false
+      if (btnCompare) btnCompare.classList.remove('active')
+    }
   }
 
   applyStyles() {
@@ -56,7 +122,8 @@ export class HistoryPanel extends HTMLElement {
           <span class="title">변경 내역 (<span class="count">0</span>개)</span>
           <div class="buttons">
             <button class="btn-copy-all" title="전체 복사">📋</button>
-            <button class="btn-compare" title="원본/변경 비교">⇄</button>
+            <button class="btn-annotated-screenshot" title="표시 스크린샷 복사">🖍️</button>
+            <button class="btn-compare" title="원본 보기 (누르고 있기 또는 \\ 키)">⇄</button>
             <button class="btn-help" title="도움말">?</button>
             <button class="btn-minimize" title="최소화">_</button>
             <button class="btn-close" title="닫기">×</button>
@@ -130,9 +197,22 @@ export class HistoryPanel extends HTMLElement {
       this.style.display = 'none'
     })
 
-    // 비교 모드 토글
-    btnCompare.addEventListener('click', () => {
-      this.toggleCompareMode()
+    // 원본 보기 - 누르고 있는 동안만 원본 스타일 표시 (클릭 토글이 아님, `\` 키로도 토글 가능)
+    btnCompare.addEventListener('mousedown', (e) => {
+      e.preventDefault()
+      this._compareHold = true
+      this._syncCompareVisual()
+    })
+    btnCompare.addEventListener('touchstart', (e) => {
+      e.preventDefault()
+      this._compareHold = true
+      this._syncCompareVisual()
+    }, { passive: false })
+    btnCompare.addEventListener('mouseleave', () => {
+      if (this._compareHold) {
+        this._compareHold = false
+        this._syncCompareVisual()
+      }
     })
 
     // 도움말 토글
@@ -147,6 +227,18 @@ export class HistoryPanel extends HTMLElement {
       if (result.success) {
         this.showCopyNotification('전체 복사 완료')
       }
+    })
+
+    // 표시(주석) 스크린샷 복사 버튼
+    const btnAnnotatedScreenshot = this.$shadow.querySelector('.btn-annotated-screenshot')
+    btnAnnotatedScreenshot.addEventListener('click', async () => {
+      const annotated = await captureAnnotated()
+      if (!annotated.success) {
+        this.showCopyNotification(annotated.message || '캡처에 실패했습니다')
+        return
+      }
+      const result = await copyScreenshotImage(annotated.dataUrl)
+      this.showCopyNotification(result.success ? '표시 스크린샷 복사 완료' : result.message)
     })
 
     // 삭제 버튼 이벤트 위임
@@ -187,6 +279,49 @@ export class HistoryPanel extends HTMLElement {
         return
       }
 
+      // 메모 수정 버튼 (요소별 메모 / 전체 요청)
+      if (e.target.classList.contains('btn-edit-note')) {
+        if (e.target.dataset.pageNoteEdit !== undefined) {
+          if (window.VisBugNotes && typeof window.VisBugNotes.openPage === 'function') {
+            window.VisBugNotes.openPage()
+          }
+          return
+        }
+
+        if (e.target.dataset.elementId !== undefined) {
+          const id = parseInt(e.target.dataset.elementId)
+          const allChanges = ChangeTracker.getAllChanges()
+          for (const [element] of allChanges) {
+            if (ChangeTracker.getElementId(element) === id) {
+              if (window.VisBugNotes && typeof window.VisBugNotes.open === 'function') {
+                window.VisBugNotes.open(element)
+              }
+              break
+            }
+          }
+        }
+        return
+      }
+
+      // 여기로 되돌리기 버튼 (타임트래블)
+      if (e.target.classList.contains('btn-revert')) {
+        const item = e.target.closest('.history-item')
+        if (!item || item.dataset.historyIndex === undefined) return
+
+        const targetIndex = parseInt(item.dataset.historyIndex)
+        this._clearPreview()
+
+        const snapshotLength = ChangeTracker.getUndoStackSnapshot().length
+        const undosNeeded = snapshotLength - targetIndex
+
+        for (let i = 0; i < undosNeeded; i++) {
+          if (!ChangeTracker.undo()) break
+        }
+
+        this.updateContent()
+        return
+      }
+
       // 개별 복사 버튼 (변경/삭제 항목)
       if (e.target.classList.contains('btn-copy')) {
         const item = e.target.closest('.history-item')
@@ -218,8 +353,12 @@ export class HistoryPanel extends HTMLElement {
         const item = e.target.closest('.history-item')
         if (!item) return
 
+        // 전체 요청(페이지 메모) 삭제
+        if (item.dataset.pageNote !== undefined) {
+          ChangeTracker.setPageNote('')
+        }
         // 변경된 요소 삭제
-        if (item.dataset.elementId) {
+        else if (item.dataset.elementId) {
           const id = parseInt(item.dataset.elementId)
           ChangeTracker.removeTrackedById(id)
         }
@@ -239,13 +378,32 @@ export class HistoryPanel extends HTMLElement {
       }
     })
 
+    // 히스토리 항목 호버 시 그 시점 상태를 미리보기 (스타일/텍스트만 임시 반영, 추적 상태는 불변)
+    const contentEl = this.$shadow.querySelector('.content')
+    contentEl.addEventListener('mouseover', (e) => {
+      const item = e.target.closest('.history-item')
+      if (!item || item.dataset.historyIndex === undefined) return
+      if (this._hoveredItem === item) return
+
+      this._hoveredItem = item
+      this._previewAt(parseInt(item.dataset.historyIndex))
+    })
+    contentEl.addEventListener('mouseout', (e) => {
+      const item = e.target.closest('.history-item')
+      if (!item || item !== this._hoveredItem) return
+      if (item.contains(e.relatedTarget)) return
+
+      this._hoveredItem = null
+      this._clearPreview()
+    })
+
     // 히스토리 항목 클릭 시 해당 요소 선택
     this.$shadow.querySelector('.content').addEventListener('click', (e) => {
-      // 버튼 클릭은 무시 (복사/삭제 버튼)
-      if (e.target.classList.contains('btn-copy') || e.target.classList.contains('btn-delete')) return
+      // 버튼 클릭 및 메모 전용 항목은 무시
+      if (e.target.closest('button')) return
 
       const item = e.target.closest('.history-item')
-      if (!item) return
+      if (!item || item.dataset.pageNote !== undefined) return
 
       // 변경된 요소 선택
       if (item.dataset.elementId) {
@@ -271,25 +429,115 @@ export class HistoryPanel extends HTMLElement {
     }, true)
   }
 
-  toggleCompareMode() {
-    const btnCompare = this.$shadow.querySelector('.btn-compare')
+  // 히스토리 항목 타임트래블 미리보기: undo 스택에서 targetIndex 이후 커밋들을
+  // 역순으로 되돌려 "그 시점 직후" 상태를 화면에 임시로 반영한다.
+  // trackedElements/textChangedElements 등 추적 상태(Map)는 전혀 건드리지 않는다.
+  _previewAt(targetIndex) {
+    this._clearPreview()
 
-    if (this.isCompareMode) {
-      // 변경된 상태로 복원
-      if (this.savedCompareStates) {
-        ChangeTracker.restoreFromCompare(this.savedCompareStates)
-        this.savedCompareStates = null
+    const snapshot = ChangeTracker.getUndoStackSnapshot()
+    const touched = new Set()
+    const restoreOps = []
+
+    for (let i = snapshot.length - 1; i > targetIndex; i--) {
+      const entry = snapshot[i]
+      if (!entry) continue
+
+      if (entry.type === 'style') {
+        const { element, originalInline } = entry
+        if (!element || !originalInline) continue
+
+        if (!touched.has(element)) {
+          touched.add(element)
+          const saved = {}
+          Object.keys(originalInline).forEach(prop => {
+            saved[prop] = element.style[prop] || ''
+          })
+          restoreOps.push({ kind: 'style', element, saved })
+        }
+
+        Object.keys(originalInline).forEach(prop => {
+          element.style[prop] = originalInline[prop] || ''
+        })
+      } else if (entry.type === 'text') {
+        const { element, previousText } = entry
+        if (!element) continue
+
+        if (!touched.has(element)) {
+          touched.add(element)
+          restoreOps.push({ kind: 'text', element, saved: element.textContent })
+        }
+
+        element.textContent = previousText
+      } else if (entry.type === 'deletion') {
+        const { element, parent, nextSibling } = entry
+        if (!element || !parent || !parent.isConnected || element.isConnected) continue
+
+        const anchor = nextSibling && nextSibling.isConnected ? nextSibling : null
+        parent.insertBefore(element, anchor)
+        restoreOps.push({ kind: 'deletion-insert', element })
       }
-      this.isCompareMode = false
-      btnCompare.classList.remove('active')
-      btnCompare.title = '원본/변경 비교'
-    } else {
-      // 원본 상태로 전환
-      this.savedCompareStates = ChangeTracker.toggleCompareMode(true)
-      this.isCompareMode = true
-      btnCompare.classList.add('active')
-      btnCompare.title = '변경 상태로 복원'
     }
+
+    this._activePreview = { restoreOps }
+  }
+
+  // 미리보기 해제: 실제(현재) 상태로 복귀
+  _clearPreview() {
+    if (!this._activePreview) return
+
+    const { restoreOps } = this._activePreview
+    for (let i = restoreOps.length - 1; i >= 0; i--) {
+      const op = restoreOps[i]
+      if (op.kind === 'style') {
+        Object.keys(op.saved).forEach(prop => {
+          op.element.style[prop] = op.saved[prop]
+        })
+      } else if (op.kind === 'text') {
+        op.element.textContent = op.saved
+      } else if (op.kind === 'deletion-insert') {
+        if (op.element.isConnected) op.element.remove()
+      }
+    }
+
+    this._activePreview = null
+  }
+
+  // 렌더링된 히스토리 항목에 undo 스택 상의 위치(data-history-index)를 부여한다
+  _annotateHistoryIndices(contentEl) {
+    const snapshot = ChangeTracker.getUndoStackSnapshot()
+    const lastStyleOrTextIndex = new Map()
+    const deletionIndexById = new Map()
+
+    snapshot.forEach((entry, i) => {
+      if (entry.type === 'style' || entry.type === 'text') {
+        lastStyleOrTextIndex.set(entry.element, i)
+      } else if (entry.type === 'deletion') {
+        deletionIndexById.set(entry.deletionId, i)
+      }
+    })
+
+    const allChanges = ChangeTracker.getAllChanges()
+    contentEl.querySelectorAll('.history-item[data-element-id]').forEach(item => {
+      const id = parseInt(item.dataset.elementId)
+      for (const [element] of allChanges) {
+        if (ChangeTracker.getElementId(element) === id) {
+          if (lastStyleOrTextIndex.has(element)) {
+            item.dataset.historyIndex = lastStyleOrTextIndex.get(element)
+          }
+          break
+        }
+      }
+    })
+
+    const deletedElements = ChangeTracker.getDeletedElements()
+    contentEl.querySelectorAll('.history-item[data-deleted-index]').forEach(item => {
+      const idx = parseInt(item.dataset.deletedIndex)
+      const deleted = deletedElements[idx]
+      if (deleted && deletionIndexById.has(deleted.deletionId)) {
+        item.dataset.historyIndex = deletionIndexById.get(deleted.deletionId)
+      }
+    })
   }
 
   toggleHelp() {
@@ -341,8 +589,9 @@ export class HistoryPanel extends HTMLElement {
   }
 
   startAutoUpdate() {
-    // 500ms마다 업데이트
+    // 500ms마다 업데이트 (단, 항목을 호버해 미리보기 중이면 재렌더링을 건너뛴다)
     this.updateInterval = setInterval(() => {
+      if (this._hoveredItem) return
       this.updateContent()
     }, 500)
   }
@@ -355,6 +604,10 @@ export class HistoryPanel extends HTMLElement {
   }
 
   updateContent() {
+    // 재렌더링 전에는 항상 활성 미리보기를 해제해 실 상태를 반영해야 한다
+    this._hoveredItem = null
+    this._clearPreview()
+
     const count = HumanFormatter.getChangeCount()
     const countEl = this.$shadow.querySelector('.count')
     const contentEl = this.$shadow.querySelector('.content')
@@ -365,6 +618,7 @@ export class HistoryPanel extends HTMLElement {
 
     if (contentEl) {
       contentEl.innerHTML = HumanFormatter.formatAllAsHTML()
+      this._annotateHistoryIndices(contentEl)
     }
   }
 

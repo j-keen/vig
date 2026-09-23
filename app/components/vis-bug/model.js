@@ -2,6 +2,38 @@ import * as Icons from './vis-bug.icons'
 import { metaKey, altKey } from '../../utilities/'
 
 export const VisBugModel = {
+  l: {
+    tool:        'position',
+    icon:        Icons.position,
+    label:       '<span>선택 / 이동</span>',
+    description: '클릭으로 선택, 드래그로 이동, 점을 끌어 크기 조절',
+    instruction: `<div table>
+                    <div>
+                      <b>이동:</b>
+                      <span>드래그 · 방향키(1px) · Shift+방향키(10px)</span>
+                    </div>
+                    <div>
+                      <b>크기 조절:</b>
+                      <span>모서리 점 = 비율 유지 · Shift = 자유 · ${altKey} = 중심 기준</span>
+                    </div>
+                    <div>
+                      <b>자식 포함 배율:</b>
+                      <span>Shift + ${altKey} + 드래그</span>
+                    </div>
+                    <div>
+                      <b>텍스트 편집:</b>
+                      <span>더블클릭</span>
+                    </div>
+                    <div>
+                      <b>여러 개 선택:</b>
+                      <span>Shift + 클릭</span>
+                    </div>
+                    <div>
+                      <b>핸들 숨기기:</b>
+                      <span>Shift + H</span>
+                    </div>
+                  </div>`,
+  },
   g: {
     tool:        'guides',
     icon:        Icons.guides,
@@ -23,30 +55,6 @@ export const VisBugModel = {
                     <div>
                       <b>해제:</b>
                       <span>esc</span>
-                    </div>
-                  </div>`,
-  },
-  l: {
-    tool:        'position',
-    icon:        Icons.position,
-    label:       '위치 조정',
-    description: '방향키로 미세 조정',
-    instruction: `<div table>
-                    <div>
-                      <b>미세 조정:</b>
-                      <span>◀ ▶ ▲ ▼</span>
-                    </div>
-                    <div>
-                      <b>큰 이동:</b>
-                      <span>Shift + 방향키</span>
-                    </div>
-                    <div>
-                      <b>원래대로:</b>
-                      <span>${altKey} + delete</span>
-                    </div>
-                    <div>
-                      <b>핸들 숨기기:</b>
-                      <span>Shift + H</span>
                     </div>
                   </div>`,
   },

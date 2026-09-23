@@ -346,8 +346,9 @@ const setTranslateOnSVG = (el, direction, position) => {
 const determineNegativity = (el, direction) =>
   direction.includes('right') || direction.includes('down')
 
+// static 요소만 relative로 승격 — 이미 fixed/absolute/sticky인 요소는 그대로 둔다
 const ensurePositionable = el => {
-  if (el instanceof HTMLElement)
+  if (el instanceof HTMLElement && getComputedStyle(el).position === 'static')
     el.style.position = 'relative'
   return el
 }

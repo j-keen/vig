@@ -13,6 +13,7 @@ export const trackedProperties = [
   'color', 'backgroundColor', 'borderColor',
   'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'textAlign',
   'borderRadius', 'opacity',
+  'fontFamily', 'fontStyle', 'textDecorationLine',
 ]
 
 export const COLOR_PROPERTIES = ['color', 'backgroundColor', 'borderColor']
@@ -103,6 +104,10 @@ const trackedElements = new Map()
 const originalTexts = new WeakMap()
 const textChangedElements = new Map()
 const lastCommittedText = new WeakMap()
+
+// 자연어 메모 (요소 단위) + 페이지 전체 요청
+const elementNotes = new Map()
+let pageNote = ''
 
 // 삭제된 요소 추적 (element ref 사라지므로 식별자와 원본 스타일 저장)
 // { identifier, tagName, original, deletedAt }
@@ -216,11 +221,51 @@ export function updateCurrentText(element) {
   }
 }
 
+// 요소에 자연어 메모 설정 (빈 문자열/공백이면 메모 제거)
+export function setNote(element, text) {
+  if (!element) return
+  const trimmed = text == null ? '' : String(text).trim()
+
+  if (!trimmed) {
+    elementNotes.delete(element)
+    return
+  }
+
+  // 스타일 변경이 없어도 추적 대상에 포함시켜 삭제/카운트 로직과 일관되게 유지
+  if (!originalStyles.has(element)) {
+    captureOriginal(element)
+  }
+
+  elementNotes.set(element, trimmed)
+}
+
+// 요소의 메모 조회
+export function getNote(element) {
+  return elementNotes.has(element) ? elementNotes.get(element) : null
+}
+
+// 모든 요소별 메모 (element -> text)
+export function getAllNotes() {
+  return new Map(elementNotes)
+}
+
+// 페이지 전체 요청 메모 설정/조회
+export function setPageNote(text) {
+  pageNote = text == null ? '' : String(text).trim()
+}
+
+export function getPageNote() {
+  return pageNote || null
+}
+
 export function getChanges(element) {
   const styles = trackedElements.has(element) ? trackedElements.get(element) : {}
   const text = textChangedElements.get(element)
-  if (text) return Object.assign({}, styles, { _text: text })
-  return styles
+  const note = elementNotes.get(element)
+  const merged = (text || note) ? Object.assign({}, styles) : styles
+  if (text) merged._text = text
+  if (note) merged._note = note
+  return merged
 }
 
 export function getAllChanges() {
@@ -238,6 +283,12 @@ export function getAllChanges() {
     result.set(element, existing)
   })
 
+  elementNotes.forEach((note, element) => {
+    const existing = result.get(element) || {}
+    existing._note = note
+    result.set(element, existing)
+  })
+
   return result
 }
 
@@ -248,6 +299,7 @@ export function removeElement(element) {
   originalTexts.delete(element)
   textChangedElements.delete(element)
   lastCommittedText.delete(element)
+  elementNotes.delete(element)
 }
 
 // 요소의 식별자를 생성 (삭제 후에도 추적용)
@@ -324,6 +376,8 @@ export function getDeletedElements() {
 export function clearAll() {
   trackedElements.clear()
   textChangedElements.clear()
+  elementNotes.clear()
+  pageNote = ''
   deletedElements.length = 0  // 삭제 기록도 초기화
   undoStack.length = 0
   redoStack.length = 0
@@ -333,6 +387,8 @@ export function clearAll() {
 export function hasChanges() {
   if (deletedElements.length > 0) return true
   if (textChangedElements.size > 0) return true
+  if (elementNotes.size > 0) return true
+  if (pageNote) return true
   for (const [, changes] of trackedElements) {
     if (Object.keys(changes).length > 0) return true
   }
@@ -345,7 +401,8 @@ export function getTrackedCount() {
     if (Object.keys(changes).length > 0) unique.add(element)
   })
   textChangedElements.forEach((_, element) => unique.add(element))
-  return unique.size + deletedElements.length
+  elementNotes.forEach((_, element) => unique.add(element))
+  return unique.size + deletedElements.length + (pageNote ? 1 : 0)
 }
 
 // 요소 고유 ID 가져오기
@@ -513,6 +570,12 @@ export function redo() {
   return { type: 'style', element, identifier }
 }
 
+// undo 스택의 읽기 전용 스냅샷 (히스토리 패널 타임트래블 미리보기/되돌리기 용)
+// 스택을 변형하지 않으므로 미리보기 목적으로 안전하게 사용 가능
+export function getUndoStackSnapshot() {
+  return undoStack.map(entry => ({ ...entry }))
+}
+
 // ID로 추적 요소 제거 (개별 삭제)
 export function removeTrackedById(id) {
   for (const [element] of trackedElements) {
@@ -533,7 +596,8 @@ export function removeDeletedByIndex(index) {
   return false
 }
 
-// 비교 모드용: 모든 변경 요소를 원본으로 토글
+// 비교 모드용: 모든 변경 요소를 원본으로 토글 (스타일 + 텍스트)
+// 미리보기 전용 - trackedElements/textChangedElements 등 추적 상태는 건드리지 않는다
 export function toggleCompareMode(showOriginal) {
   const results = []
 
@@ -550,16 +614,33 @@ export function toggleCompareMode(showOriginal) {
         current[prop] = element.style[prop] || ''
         element.style[prop] = original._inline[prop] || ''
       })
-      results.push({ element, savedCurrent: current })
+      results.push({ element, kind: 'style', savedCurrent: current })
     }
   })
+
+  if (showOriginal) {
+    textChangedElements.forEach((textInfo, element) => {
+      if (!element) return
+      const savedText = readText(element)
+      element.textContent = textInfo.original
+      results.push({ element, kind: 'text', savedText })
+    })
+  }
 
   return results
 }
 
-// 비교 모드 해제: 변경된 상태로 복원
+// 비교 모드 해제: 변경된 상태로 복원 (스타일 + 텍스트)
 export function restoreFromCompare(savedStates) {
-  savedStates.forEach(({ element, savedCurrent }) => {
+  savedStates.forEach(entry => {
+    if (!entry || !entry.element) return
+
+    if (entry.kind === 'text') {
+      entry.element.textContent = entry.savedText
+      return
+    }
+
+    const { element, savedCurrent } = entry
     trackedProperties.forEach(prop => {
       element.style[prop] = savedCurrent[prop] || ''
     })
@@ -622,6 +703,12 @@ export const ChangeTracker = {
   addScreenshot,
   getScreenshots,
   removeScreenshotById,
+  setNote,
+  getNote,
+  getAllNotes,
+  setPageNote,
+  getPageNote,
+  getUndoStackSnapshot,
 }
 
 // Expose to window for E2E testing

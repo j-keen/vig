@@ -179,6 +179,87 @@ export const HistoryPanelStyles = `
     content: "\\1F4F7 ";
   }
 
+  .btn-revert {
+    position: absolute;
+    top: 4px;
+    right: 44px;
+    background: transparent;
+    border: none;
+    color: hsl(0 0% 40%);
+    cursor: pointer;
+    width: 18px;
+    height: 18px;
+    font-size: 12px;
+    line-height: 1;
+    border-radius: 3px;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+
+  .history-item:hover .btn-revert {
+    opacity: 1;
+  }
+
+  .btn-revert:hover {
+    background: hsl(280 50% 45%);
+    color: hsl(0 0% 100%);
+  }
+
+  .history-note {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 4px;
+    padding-left: 8px;
+    color: hsl(45 90% 65%);
+    font-size: 11px;
+    line-height: 1.5;
+  }
+
+  .history-note .note-text {
+    flex: 1;
+    word-break: break-word;
+  }
+
+  .btn-edit-note {
+    flex: none;
+    background: transparent;
+    border: none;
+    color: hsl(45 90% 65%);
+    cursor: pointer;
+    width: 16px;
+    height: 16px;
+    font-size: 11px;
+    line-height: 1;
+    border-radius: 3px;
+    padding: 0;
+  }
+
+  .btn-edit-note:hover {
+    background: hsl(45 60% 35%);
+    color: hsl(0 0% 100%);
+  }
+
+  .history-item.page-note {
+    border-left: 3px solid hsl(45 90% 55%);
+  }
+
+  .history-item.page-note .history-name {
+    color: hsl(45 90% 65%);
+  }
+
+  .history-item.page-note .btn-edit-note {
+    position: absolute;
+    top: 4px;
+    right: 24px;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+
+  .history-item.page-note:hover .btn-edit-note {
+    opacity: 1;
+  }
+
   .help-content {
     padding: 12px;
     max-height: 300px;
@@ -281,7 +362,8 @@ export const HistoryPanelStyles = `
     color: hsl(0 0% 100%);
   }
 
-  .btn-copy-all {
+  .btn-copy-all,
+  .btn-annotated-screenshot {
     font-size: 12px;
   }
 

@@ -100,6 +100,10 @@ export const isOffBounds = node => {
     || node.closest('visbug-gridlines')
     || node.closest('visbug-history')
     || node.closest('visbug-depth-highlight')
+    || node.closest('visbug-props')
+    || node.closest('visbug-text-toolbar')
+    || node.closest('visbug-note')
+    || node.closest('visbug-palette')
   )
 }
 

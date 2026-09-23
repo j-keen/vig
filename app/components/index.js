@@ -16,3 +16,5 @@ export { Ally }       from './metatip/ally.element'
 export { Hotkeys }    from './hotkey-map/hotkeys.element'
 
 export { HistoryPanel } from './history-panel/history-panel.element'
+export { TextToolbar } from './text-toolbar/text-toolbar.element'
+export { PropsPanel } from './props-panel/props-panel.element'

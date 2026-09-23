@@ -81,9 +81,11 @@ export function formatElementChanges(element, changes) {
   if (changes.borderRadius) lines.push(`  모서리: ${changes.borderRadius}`)
   if (changes.opacity) lines.push(`  불투명도: ${changes.opacity}`)
 
-  if (lines.length === 0) return null
+  const note = changes._note || null
 
-  return { name, lines }
+  if (lines.length === 0 && !note) return null
+
+  return { name, lines, note }
 }
 
 // 삭제된 요소 포맷
@@ -127,9 +129,33 @@ export function formatAllForHuman() {
   return results
 }
 
+// 메모 한 줄 렌더링 (요소별 메모 - 수정 버튼 포함)
+function renderNoteRow(note, elementId) {
+  if (!note) return ''
+  return `
+    <div class="history-note">
+      <span class="note-text">💬 "${escapeHtml(note)}"</span>
+      <button class="btn-edit-note" data-element-id="${elementId}" title="메모 수정">✎</button>
+    </div>
+  `
+}
+
 // HTML 형식으로 출력 (히스토리 패널용)
 export function formatAllAsHTML() {
   const htmlParts = []
+
+  // 전체 페이지 요청 (있을 때만, 최상단)
+  const pageNote = ChangeTracker.getPageNote()
+  if (pageNote) {
+    htmlParts.push(`
+      <div class="history-item page-note" data-page-note="true">
+        <button class="btn-edit-note" data-page-note-edit="true" title="메모 수정">✎</button>
+        <button class="btn-delete" data-page-note-delete="true" title="삭제">×</button>
+        <div class="history-name">전체 요청</div>
+        <div class="history-detail">"${escapeHtml(pageNote)}"</div>
+      </div>
+    `)
+  }
 
   // 변경된 요소들
   const allChanges = ChangeTracker.getAllChanges()
@@ -139,10 +165,12 @@ export function formatAllAsHTML() {
       const elementId = ChangeTracker.getElementId(element)
       htmlParts.push(`
         <div class="history-item" data-element-id="${elementId}">
+          <button class="btn-revert" title="여기로 되돌리기">⎌</button>
           <button class="btn-copy" title="복사">⎘</button>
           <button class="btn-delete" title="삭제">×</button>
           <div class="history-name">${escapeHtml(formatted.name)}</div>
           ${formatted.lines.map(line => `<div class="history-detail">${escapeHtml(line)}</div>`).join('')}
+          ${renderNoteRow(formatted.note, elementId)}
         </div>
       `)
     }
@@ -154,6 +182,7 @@ export function formatAllAsHTML() {
     const formatted = formatDeletedElement(deleted)
     htmlParts.push(`
       <div class="history-item deleted" data-deleted-index="${index}">
+        <button class="btn-revert" title="여기로 되돌리기">⎌</button>
         <button class="btn-copy" title="복사">⎘</button>
         <button class="btn-delete" title="삭제">×</button>
         <div class="history-name">${escapeHtml(formatted.name)}</div>

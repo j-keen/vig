@@ -110,6 +110,38 @@ export function isUtilityClass(name) {
   return UTILITY_PATTERNS.some(pattern => pattern.test(base))
 }
 
+// 드래그/선택 중 도구가 임시로 붙이는 인라인 스타일 (AI에게 전달할 스니펫에서는 노이즈)
+const TOOL_ONLY_STYLE_PROPS = new Set([
+  'cursor', 'transition', 'will-change', 'user-select', 'outline',
+  '-webkit-user-select', '-moz-user-select', '-ms-user-select',
+])
+
+// "prop: value; prop2: value2" 형태의 인라인 style 문자열에서 도구 전용 속성만 제거
+function stripToolOnlyStyleText(styleText) {
+  if (!styleText) return ''
+  const kept = styleText
+    .split(';')
+    .map(part => part.trim())
+    .filter(Boolean)
+    .filter(part => {
+      const prop = part.split(':')[0].trim().toLowerCase()
+      return !TOOL_ONLY_STYLE_PROPS.has(prop)
+    })
+  return kept.join('; ')
+}
+
+// element(및 하위 트리)의 style 속성에서 도구 전용 인라인 스타일을 제거 (in-place)
+function stripToolOnlyStyles(node) {
+  if (!node || node.nodeType !== 1) return
+  if (typeof node.getAttribute === 'function' && node.hasAttribute && node.hasAttribute('style')) {
+    const cleaned = stripToolOnlyStyleText(node.getAttribute('style'))
+    if (cleaned) node.setAttribute('style', cleaned)
+    else node.removeAttribute('style')
+  }
+  const children = node.children ? Array.from(node.children) : []
+  children.forEach(stripToolOnlyStyles)
+}
+
 function collapseChildText(node) {
   if (!node) return
   const textType = (typeof Node !== 'undefined' && Node.TEXT_NODE) || 3
@@ -130,6 +162,7 @@ export function getOuterHTMLSnippet(element, maxLen = 200) {
     clone.removeAttribute('data-label-id')
     clone.removeAttribute('data-pseudo-select')
   }
+  stripToolOnlyStyles(clone)
   collapseChildText(clone)
   let html = (clone && clone.outerHTML) || element.outerHTML || ''
   if (html.length > maxLen) html = html.slice(0, maxLen) + '...'
@@ -151,10 +184,12 @@ function getFinalInlineStyles(element) {
   if (!element || !element.style) return null
   const parts = []
   trackedProperties.forEach(prop => {
+    const kebab = toKebabCase(prop)
+    if (TOOL_ONLY_STYLE_PROPS.has(kebab)) return
     const raw = element.style[prop]
     if (!raw) return
     const value = prop === 'transform' ? formatTransformValue(raw) : formatTrackedValue(prop, raw)
-    parts.push(`${toKebabCase(prop)}: ${value}`)
+    parts.push(`${kebab}: ${value}`)
   })
   return parts.length ? parts.join('; ') : null
 }
@@ -405,6 +440,11 @@ export function formatElementForAI(element, changes, index) {
   const lines = []
   const num = index !== undefined ? `### ${index}. ` : '### '
   lines.push(`${num}${identifier} 수정`)
+
+  if (changes && changes._note) {
+    lines.push(`- 요청: "${changes._note}"`)
+  }
+
   lines.push(`- 위치: ${selector}`)
 
   if (classList) {
@@ -427,7 +467,7 @@ export function formatElementForAI(element, changes, index) {
     lines.push(`- 텍스트: "${from}" → "${to}"`)
   }
 
-  const styleEntries = Object.entries(changes).filter(([prop]) => prop !== '_text')
+  const styleEntries = Object.entries(changes).filter(([prop]) => prop !== '_text' && prop !== '_note')
   if (styleEntries.length) {
     lines.push(`- 변경 내용:`)
   }
@@ -502,11 +542,24 @@ export function formatDeletedForAI(deleted, index) {
 }
 
 // 모든 변경사항을 구조화된 AI 프롬프트로 변환
-export function formatAllForAI() {
+// AI 프롬프트/스크린샷 주석에서 공유하는 변경 요소 순서 (element -> 1..N)
+// formatAllForAI의 번호 매김과 항상 동일한 순서를 유지한다
+export function getOrderedChangeEntries() {
   const allChanges = ChangeTracker.getAllChanges()
-  const deletedElements = ChangeTracker.getDeletedElements()
+  const entries = []
+  let idx = 1
+  allChanges.forEach((changes, element) => {
+    entries.push({ element, changes, index: idx++ })
+  })
+  return entries
+}
 
-  if (allChanges.size === 0 && deletedElements.length === 0) {
+export function formatAllForAI() {
+  const orderedEntries = getOrderedChangeEntries()
+  const deletedElements = ChangeTracker.getDeletedElements()
+  const pageNote = ChangeTracker.getPageNote()
+
+  if (orderedEntries.length === 0 && deletedElements.length === 0 && !pageNote) {
     return ''
   }
 
@@ -521,16 +574,23 @@ export function formatAllForAI() {
   sections.push(getPageContext())
   sections.push('')
 
+  // 전체 페이지 요청 (있을 때만)
+  if (pageNote) {
+    sections.push('## 요청')
+    sections.push(pageNote)
+    sections.push('')
+  }
+
   // 변경사항
   sections.push('## 변경사항')
   sections.push('')
 
-  let itemIndex = 1
-
-  allChanges.forEach((changes, element) => {
-    sections.push(formatElementForAI(element, changes, itemIndex++))
+  orderedEntries.forEach(({ element, changes, index }) => {
+    sections.push(formatElementForAI(element, changes, index))
     sections.push('')
   })
+
+  let itemIndex = orderedEntries.length + 1
 
   deletedElements.forEach(deleted => {
     sections.push(formatDeletedForAI(deleted, itemIndex++))
@@ -612,6 +672,7 @@ export const AIFormatter = {
   transformHasScale,
   isUtilityClass,
   getOuterHTMLSnippet,
+  getOrderedChangeEntries,
 }
 
 if (typeof window !== 'undefined') {

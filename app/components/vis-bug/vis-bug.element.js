@@ -14,6 +14,7 @@ import {
   AICopy, setupAICopyTooltip,
   DepthSelector
 } from '../../features/'
+import * as Features from '../../features/'
 
 import {
   VisBugStyles,
@@ -74,8 +75,22 @@ export default class VisBug extends HTMLElement {
       }
     })
 
-    // 기본 도구: guides
-    this.toolSelected($('[data-tool="guides"]', this.$shadow)[0])
+    // 워커 통합 훅: 속성 패널(visbug-props), 메모 기능(Notes) — 정의돼 있을 때만 마운트
+    if (customElements.get('visbug-props')) {
+      this.propsPanel = document.createElement('visbug-props')
+      this.propsPanel.visbug = this
+      document.body.appendChild(this.propsPanel)
+    }
+    if (typeof Features.Notes === 'function') {
+      this.notesFeature = Features.Notes(this)
+    }
+    // 텍스트 미니 툴바: 텍스트가 있는 요소를 선택하면 도구와 무관하게 표시
+    if (typeof Features.TextToolbarFeature === 'function') {
+      this.textToolbarFeature = Features.TextToolbarFeature(this)
+    }
+
+    // 기본 도구: 선택/이동 (position)
+    this.toolSelected($('[data-tool="position"]', this.$shadow)[0])
   }
 
   disconnectedCallback() {
@@ -83,6 +98,9 @@ export default class VisBug extends HTMLElement {
     this.guidesFeature && this.guidesFeature()
     this.depthFeature && this.depthFeature()
     this.historyPanel && this.historyPanel.remove()
+    this.propsPanel && this.propsPanel.remove()
+    this.notesFeature && this.notesFeature()
+    this.textToolbarFeature && this.textToolbarFeature()
     this.cleanup()
     this.selectorEngine.disconnect()
     hotkeys.unbind(
@@ -219,7 +237,7 @@ export default class VisBug extends HTMLElement {
       <ol constructible-support="${constructibleStylesheetSupport ? 'false':'true'}">
         ${Object.entries(this.toolbar_model).reduce((list, [key, tool]) => `
           ${list}
-          <li aria-label="${tool.label} Tool" aria-description="${tool.description}" aria-hotkey="${key}" data-tool="${tool.tool}" data-active="${key == 'g'}">
+          <li aria-label="${tool.label} Tool" aria-description="${tool.description}" aria-hotkey="${key}" data-tool="${tool.tool}" data-active="${key == 'l'}">
             ${tool.icon}
             ${this.demoTip({key, ...tool})}
           </li>

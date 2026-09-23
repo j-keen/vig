@@ -696,4 +696,152 @@ test('aicopy is an action: keeps current tool, works twice, Alt+click clears', a
   t.is(cleared.remaining, 0)
 })
 
+test('formatElementForAI includes a 요청 line right after the identifier when a note is set', async t => {
+  const { page } = t.context
+
+  const result = await page.evaluate(() => {
+    window.ChangeTracker.clearAll()
+
+    const el = document.createElement('div')
+    el.id = 'note-target'
+    document.body.appendChild(el)
+
+    window.ChangeTracker.setNote(el, '더 눈에 띄게')
+    el.style.marginTop = '24px'
+    window.ChangeTracker.updateCurrent(el)
+
+    const changes = window.ChangeTracker.getChanges(el)
+    const formatted = window.AIFormatter.formatElementForAI(el, changes, 1)
+
+    el.remove()
+    window.ChangeTracker.clearAll()
+
+    return { formatted }
+  })
+
+  const lines = result.formatted.split('\n')
+  const headerIdx = lines.findIndex(l => l.startsWith('### 1.'))
+  t.true(headerIdx >= 0)
+  t.is(lines[headerIdx + 1], '- 요청: "더 눈에 띄게"', '요청 line should come right after identifier')
+})
+
+test('formatAllForAI includes note-only elements and a page-level 요청 section', async t => {
+  const { page } = t.context
+
+  const result = await page.evaluate(() => {
+    window.ChangeTracker.clearAll()
+
+    const el = document.createElement('div')
+    el.id = 'note-only-ai'
+    document.body.appendChild(el)
+    window.ChangeTracker.setNote(el, '버튼처럼 보이게')
+
+    window.ChangeTracker.setPageNote('전체적으로 더 모던하게')
+
+    const formatted = window.AIFormatter.formatAllForAI()
+
+    el.remove()
+    window.ChangeTracker.clearAll()
+
+    return { formatted }
+  })
+
+  t.true(result.formatted.includes('## 요청'))
+  t.true(result.formatted.includes('전체적으로 더 모던하게'))
+  t.true(result.formatted.includes('#note-only-ai'))
+  t.true(result.formatted.includes('- 요청: "버튼처럼 보이게"'))
+
+  const requestSectionIdx = result.formatted.indexOf('## 요청')
+  const changesSectionIdx = result.formatted.indexOf('## 변경사항')
+  t.true(requestSectionIdx < changesSectionIdx, '## 요청 section should come before ## 변경사항')
+})
+
+test('getOrderedChangeEntries numbers elements 1..N in the same order used by formatAllForAI', async t => {
+  const { page } = t.context
+
+  const result = await page.evaluate(() => {
+    window.ChangeTracker.clearAll()
+
+    const first = document.createElement('div')
+    first.id = 'order-first'
+    document.body.appendChild(first)
+    window.ChangeTracker.captureOriginal(first)
+    first.style.marginTop = '10px'
+    window.ChangeTracker.updateCurrent(first)
+
+    const second = document.createElement('div')
+    second.id = 'order-second'
+    document.body.appendChild(second)
+    window.ChangeTracker.captureOriginal(second)
+    second.style.marginTop = '10px'
+    window.ChangeTracker.updateCurrent(second)
+
+    const entries = window.AIFormatter.getOrderedChangeEntries()
+    const formatted = window.AIFormatter.formatAllForAI()
+
+    first.remove()
+    second.remove()
+    window.ChangeTracker.clearAll()
+
+    return {
+      indices: entries.map(e => e.index),
+      firstIsFirst: formatted.indexOf('#order-first') < formatted.indexOf('#order-second'),
+      hasNumberOne: formatted.includes('### 1.'),
+      hasNumberTwo: formatted.includes('### 2.'),
+    }
+  })
+
+  t.deepEqual(result.indices, [1, 2])
+  t.true(result.firstIsFirst)
+  t.true(result.hasNumberOne)
+  t.true(result.hasNumberTwo)
+})
+
+test('outerHTML snippet and final inline style strip tool-only drag/selection styles', async t => {
+  const { page } = t.context
+
+  const result = await page.evaluate(() => {
+    window.ChangeTracker.clearAll()
+
+    const el = document.createElement('div')
+    el.id = 'tool-style-leak'
+    document.body.appendChild(el)
+
+    window.ChangeTracker.captureOriginal(el)
+
+    // Simulate leftover tool-only inline styles a drag/selection layer might set,
+    // alongside a real tracked change.
+    el.style.marginTop = '24px'
+    el.style.cursor = 'move'
+    el.style.transition = 'opacity .25s ease-out'
+    el.style.willChange = 'top,left'
+    el.style.userSelect = 'none'
+    el.style.outline = '2px solid red'
+
+    window.ChangeTracker.updateCurrent(el)
+
+    const changes = window.ChangeTracker.getChanges(el)
+    const formatted = window.AIFormatter.formatElementForAI(el, changes, 1)
+    const snippet = window.AIFormatter.getOuterHTMLSnippet(el)
+
+    el.remove()
+    window.ChangeTracker.clearAll()
+
+    return { formatted, snippet }
+  })
+
+  t.true(result.snippet.includes('margin-top'), 'real tracked style should remain in the HTML snippet')
+  t.false(result.snippet.includes('cursor'), 'cursor should be stripped from the HTML snippet')
+  t.false(result.snippet.includes('transition'), 'transition should be stripped from the HTML snippet')
+  t.false(result.snippet.includes('will-change'), 'will-change should be stripped from the HTML snippet')
+  t.false(result.snippet.includes('user-select'), 'user-select should be stripped from the HTML snippet')
+  t.false(result.snippet.includes('outline'), 'outline should be stripped from the HTML snippet')
+
+  t.true(result.formatted.includes('최종 인라인 스타일:'))
+  const finalInlineLine = result.formatted.split('\n').find(l => l.includes('최종 인라인 스타일:'))
+  t.true(finalInlineLine.includes('margin-top'))
+  t.false(finalInlineLine.includes('cursor'))
+  t.false(finalInlineLine.includes('outline'))
+})
+
 test.afterEach(teardownPptrTab)

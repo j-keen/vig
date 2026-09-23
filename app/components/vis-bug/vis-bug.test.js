@@ -5,9 +5,9 @@ from '../../../tests/helpers'
 
 test.beforeEach(setupPptrTab)
 
-test('Should have guides as default tool', async t => {
+test('Should have position (선택/이동) as default tool', async t => {
   const { page } = t.context
-  t.is(await getActiveTool(page), 'guides')
+  t.is(await getActiveTool(page), 'position')
   t.pass()
 })
 
