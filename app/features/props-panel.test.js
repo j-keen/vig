@@ -263,3 +263,121 @@ test.serial('Props panel: W stepper click increases width by 1px, Shift+click by
   const undoCount = await page.evaluate(() => window.ChangeTracker.getUndoStackSnapshot().length)
   t.is(undoCount, 2, 'each stepper click is its own committed gesture (one undo entry per click)')
 })
+
+test.serial('Props panel: Settings theme toggles data-theme and panel background luminance', async t => {
+  const { page } = t.context
+
+  await page.evaluate(() => {
+    const el = document.createElement('div')
+    el.id = 'props-theme-target'
+    el.style.cssText = 'position:fixed;left:50px;top:50px;width:100px;height:60px;z-index:1;background:#eee;'
+    document.body.appendChild(el)
+    document.querySelector('vis-bug').selectorEngine.select(el)
+  })
+  await page.waitForTimeout(200)
+
+  await page.evaluate(() => window.DesignPokeSettings.set({ theme: 'light' }))
+  await page.waitForTimeout(150)
+
+  const light = await page.evaluate(() => {
+    const panel = document.querySelector('visbug-props')
+    const panelEl = panel.$shadow.querySelector('.panel')
+    const bg = getComputedStyle(panelEl).backgroundColor
+    const [r, g, b] = bg.match(/[\d.]+/g).map(Number)
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    return { theme: panel.getAttribute('data-theme'), luminance }
+  })
+  console.log('[props-panel e2e] light theme', light)
+  t.is(light.theme, 'light', 'host should carry data-theme="light"')
+  t.true(light.luminance > 0.8, `light panel background should be bright (luminance > 0.8, got ${light.luminance})`)
+
+  await page.evaluate(() => window.DesignPokeSettings.set({ theme: 'dark' }))
+  await page.waitForTimeout(150)
+
+  const dark = await page.evaluate(() => document.querySelector('visbug-props').getAttribute('data-theme'))
+  t.is(dark, 'dark', 'host should carry data-theme="dark" after switching back')
+})
+
+test.serial('Props panel: Settings opacity is applied to the host style.opacity', async t => {
+  const { page } = t.context
+
+  await page.evaluate(() => {
+    const el = document.createElement('div')
+    el.id = 'props-opacity-target'
+    el.style.cssText = 'position:fixed;left:50px;top:50px;width:100px;height:60px;z-index:1;background:#eee;'
+    document.body.appendChild(el)
+    document.querySelector('vis-bug').selectorEngine.select(el)
+  })
+  await page.waitForTimeout(200)
+
+  await page.evaluate(() => window.DesignPokeSettings.set({ opacity: 0.5 }))
+  await page.waitForTimeout(100)
+
+  const opacity = await page.evaluate(() => document.querySelector('visbug-props').style.opacity)
+  t.is(opacity, '0.5', 'Settings should apply opacity directly to the host style')
+})
+
+test.serial('Props panel: dragging the header moves the host and persists position across reload', async t => {
+  const { page } = t.context
+
+  await page.evaluate(() => {
+    const el = document.createElement('div')
+    el.id = 'props-drag-target'
+    el.style.cssText = 'position:fixed;left:50px;top:50px;width:100px;height:60px;z-index:1;background:#eee;'
+    document.body.appendChild(el)
+    document.querySelector('vis-bug').selectorEngine.select(el)
+  })
+  await page.waitForTimeout(200)
+
+  const before = await page.evaluate(() => {
+    const host = document.querySelector('visbug-props')
+    const r = host.getBoundingClientRect()
+    const header = host.$shadow.querySelector('.header')
+    const hr = header.getBoundingClientRect()
+    return { left: r.left, top: r.top, headerX: hr.left + hr.width / 2, headerY: hr.top + hr.height / 2 }
+  })
+
+  await page.mouse.move(before.headerX, before.headerY)
+  await page.mouse.down()
+  await page.mouse.move(before.headerX - 100, before.headerY, { steps: 10 })
+  await page.mouse.up()
+  await page.waitForTimeout(150)
+
+  const after = await page.evaluate(() => {
+    const host = document.querySelector('visbug-props')
+    const r = host.getBoundingClientRect()
+    return { left: r.left, top: r.top }
+  })
+  console.log('[props-panel e2e] drag before/after', before, after)
+  t.true(Math.abs((before.left - after.left) - 100) < 5,
+    `left should have decreased by ~100px (actual delta ${before.left - after.left})`)
+
+  const savedPosition = await page.evaluate(() => window.DesignPokeSettings.get().positions.props)
+  console.log('[props-panel e2e] saved position', savedPosition)
+  t.truthy(savedPosition, 'dragging should persist a saved position for the props panel')
+  t.true(Math.abs(savedPosition.left - after.left) < 5, 'saved position should match the dragged-to location')
+
+  // 새로고침 후 저장된 위치가 복원되는지 확인
+  await page.reload()
+  await page.waitForSelector('vis-bug', { timeout: 10000 })
+  await page.waitForSelector('visbug-props', { timeout: 10000 })
+  await page.evaluate(() => document.body.setAttribute('testing', true))
+
+  await page.evaluate(() => {
+    const el = document.createElement('div')
+    el.id = 'props-drag-target-2'
+    el.style.cssText = 'position:fixed;left:50px;top:50px;width:100px;height:60px;z-index:1;background:#eee;'
+    document.body.appendChild(el)
+    document.querySelector('vis-bug').selectorEngine.select(el)
+  })
+  await page.waitForTimeout(300)
+
+  const afterReload = await page.evaluate(() => {
+    const host = document.querySelector('visbug-props')
+    const r = host.getBoundingClientRect()
+    return { left: r.left, top: r.top }
+  })
+  console.log('[props-panel e2e] position after reload', afterReload)
+  t.true(Math.abs(afterReload.left - after.left) < 5,
+    `panel should reopen at the saved dragged position after reload (expected ~${after.left}, got ${afterReload.left})`)
+})

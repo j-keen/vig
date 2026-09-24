@@ -207,3 +207,33 @@ test.serial('Text toolbar: Escape during a live size edit restores the previous 
     window.getComputedStyle(document.getElementById('toolbar-target')).fontSize)
   t.is(afterMouseUp, before, 'releasing the mouse after Escape should not re-apply the cancelled drag')
 })
+
+test.serial('Text toolbar: Settings theme/opacity are applied to the toolbar host via registerPanel', async t => {
+  const { page } = t.context
+
+  await selectTargetAndGetControlRect(page, '.size-range') // ensures an element is selected and the toolbar is visible
+
+  await page.evaluate(() => window.DesignPokeSettings.set({ theme: 'light' }))
+  await page.waitForTimeout(100)
+
+  const themeResult = await page.evaluate(() => {
+    const tb = document.querySelector('visbug-text-toolbar')
+    const bar = tb.$shadow.querySelector('.toolbar')
+    const bg = window.getComputedStyle(bar).backgroundColor
+    const [r, g, b] = bg.match(/[\d.]+/g).map(Number)
+    const toLinear = c => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4) }
+    const luminance = 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b)
+    return { dataTheme: tb.getAttribute('data-theme'), luminance }
+  })
+
+  t.is(themeResult.dataTheme, 'light', 'toolbar host should carry data-theme="light" after Settings.set({theme:"light"})')
+  t.true(themeResult.luminance > 0.8, `light theme toolbar background should be a clean, near-white light (luminance was ${themeResult.luminance})`)
+
+  await page.evaluate(() => window.DesignPokeSettings.set({ opacity: 0.6 }))
+  await page.waitForTimeout(100)
+
+  const opacity = await page.evaluate(() =>
+    document.querySelector('visbug-text-toolbar').style.opacity)
+
+  t.is(opacity, '0.6', 'Settings.set({opacity:0.6}) should set the toolbar host style.opacity to "0.6"')
+})

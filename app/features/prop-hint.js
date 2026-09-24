@@ -56,9 +56,14 @@ const box = (x, y, w, h, style) => {
   return d
 }
 
-const label = (x, y, text, bg = COLORS.dimension) => {
+const label = (x, y, text, bg = COLORS.dimension, swatch = null) => {
   const d = document.createElement('div')
   d.textContent = text
+  if (swatch) {
+    const chip = document.createElement('span')
+    chip.style.cssText = `display:inline-block; width:12px; height:12px; border-radius:3px; margin-right:6px; vertical-align:-2px; background:${swatch}; border:1px solid rgba(255,255,255,.7); box-shadow:0 0 0 1px rgba(0,0,0,.35);`
+    d.prepend(chip)
+  }
   d.style.cssText = `
     position:absolute; left:${px(x)}; top:${px(y)}; transform: translate(-50%, -100%);
     background:${bg}; color:#fff; font-size:11px; line-height:1; padding:4px 6px; border-radius:4px;
@@ -159,17 +164,22 @@ const render = () => {
     if (prop === 'left') h.appendChild(hLine(pr.left + sx, x, y + hh / 2, text))
     else h.appendChild(vLine(x + w / 2, pr.top + sy, y, text))
   }
-  else if (/^(font|line|letter|text|color)/.test(prop)) {
+  else if (/^(font|line|letter|text)/.test(prop)) {
     h.appendChild(box(x, y, w, hh, `background:${COLORS.text}; outline:2px solid ${COLORS.outline};`))
     h.appendChild(label(x + w / 2, y - 6, text, COLORS.outline))
   }
   else if (prop === 'backgroundColor') {
-    h.appendChild(box(x, y, w, hh, `outline:2px solid ${COLORS.outline}; background: repeating-linear-gradient(45deg, hsla(210,100%,55%,.18) 0 6px, transparent 6px 12px);`))
-    h.appendChild(label(x + w / 2, y - 6, text, COLORS.outline))
+    // 사선 무늬 대신: 얇은 외곽선 + 현재 배경색 칩 라벨 (요소의 실제 색을 가리지 않음)
+    h.appendChild(box(x - 2, y - 2, w + 4, hh + 4, `outline:2px dashed ${COLORS.outline}; border-radius:${cs.borderRadius};`))
+    h.appendChild(label(x + w / 2, y - 8, text, COLORS.outline, cs.backgroundColor))
+  }
+  else if (prop === 'color') {
+    h.appendChild(box(x, y, w, hh, `outline:2px solid ${COLORS.outline};`))
+    h.appendChild(label(x + w / 2, y - 6, text, COLORS.outline, cs.color))
   }
   else if (prop === 'borderColor') {
     h.appendChild(box(x - 3, y - 3, w + 6, hh + 6, `outline:3px solid ${COLORS.outline}; opacity:.8;`))
-    h.appendChild(label(x + w / 2, y - 8, text, COLORS.outline))
+    h.appendChild(label(x + w / 2, y - 8, text, COLORS.outline, cs.borderColor))
   }
   else {
     h.appendChild(box(x, y, w, hh, `outline:2px solid ${COLORS.outline};`))

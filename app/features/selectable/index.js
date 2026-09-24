@@ -10,7 +10,8 @@ import { watchImagesForUpload } from '../imageswap'
 import { draggable } from '../position'
 import { ChangeTracker } from '../change-tracker'
 
-import { createClassname } from '../../utilities/'
+import { createClassname, isOffBounds } from '../../utilities/'
+import { getCSSSelector } from '../ai-formatter'
 
 export function Selectable(visbug) {
   let selected            = []
@@ -18,6 +19,7 @@ export function Selectable(visbug) {
   let handles             = []
   let draggables          = []  // 드래그 가능한 요소들 추적
   let handlesHidden       = false
+  const selectorPaths     = new WeakMap()  // 선택 요소 → CSS 경로 (프레임워크 재렌더 후 재선택용)
 
   const { onSelectedUpdate, removeSelectedCallback, tellWatchers } = createCallbackSystem(() => selected)
   const { on_copy, on_cut, on_paste, on_copy_styles, on_paste_styles } = createClipboardHandlers({ getSelected: () => selected })
@@ -36,6 +38,7 @@ export function Selectable(visbug) {
 
     el.setAttribute('data-selected', true)
     el.setAttribute('data-label-id', id)
+    try { selectorPaths.set(el, getCSSSelector(el)) } catch (e) {}
 
     overlayUI.clearHover()
 
@@ -208,7 +211,41 @@ export function Selectable(visbug) {
     on_copy, on_cut, on_paste, on_copy_styles, on_paste_styles,
   })
 
+  // 선택 유지: React 등 프레임워크가 요소를 다시 그려 DOM 노드가 교체되면
+  // 같은 CSS 경로의 새 노드를 찾아 조용히 재선택한다 (핸들·패널이 사라지지 않게)
+  let reselectScheduled = false
+  const reselectReplacedNodes = () => {
+    reselectScheduled = false
+    const lost = selected.filter(el => !el.isConnected)
+    if (!lost.length) return
+
+    const survivors    = selected.filter(el => el.isConnected)
+    const replacements = lost
+      .map(el => {
+        const path = selectorPaths.get(el)
+        if (!path) return null
+        let found = null
+        try { found = document.querySelector(path) } catch (e) { return null }
+        if (!found || !found.isConnected || isOffBounds(found) || survivors.includes(found)) return null
+        return found
+      })
+      .filter(Boolean)
+
+    unselect_all({silent: true})
+    ;[...survivors, ...replacements].reverse().forEach(el => select(el))
+  }
+
+  const domObserver = new MutationObserver(records => {
+    if (reselectScheduled || !selected.length) return
+    const touched = records.some(r => r.removedNodes.length)
+    if (!touched) return
+    reselectScheduled = true
+    requestAnimationFrame(reselectReplacedNodes)
+  })
+  domObserver.observe(document.body, { childList: true, subtree: true })
+
   const disconnect = () => {
+    domObserver.disconnect()
     unselect_all()
     eventHandlers.unlisten()
   }

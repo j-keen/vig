@@ -4,22 +4,43 @@
 
 import hotkeys from 'hotkeys-js'
 import { ChangeTracker } from './change-tracker'
+import { Settings } from './settings'
 
 const NOTE_TAG = 'visbug-note'
 const HOTKEY = 'ctrl+k,command+k'
 
+// 색상은 CSS 변수로 토큰화되어 있으며, :host([data-theme="light"]) 에서 재정의된다.
+// Settings.registerPanel()이 :host 에 data-theme 과 style.opacity를 관리한다.
 const NOTE_STYLES = `
   :host {
     all: initial;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-size: 12px;
+
+    --dpn-bg: hsl(0 0% 10%);
+    --dpn-border: hsl(200 100% 55%);
+    --dpn-shadow: rgba(0, 0, 0, 0.5);
+    --dpn-input-bg: hsl(0 0% 15%);
+    --dpn-text: hsl(0 0% 92%);
+    --dpn-placeholder: hsl(0 0% 50%);
+    --dpn-hint: hsl(0 0% 45%);
+  }
+
+  :host([data-theme="light"]) {
+    --dpn-bg: #ffffff;
+    --dpn-border: hsl(210 90% 45%);
+    --dpn-shadow: rgba(20, 20, 30, 0.2);
+    --dpn-input-bg: #f3f4f6;
+    --dpn-text: #111111;
+    --dpn-placeholder: #6b7280;
+    --dpn-hint: #6b7280;
   }
 
   .note-box {
-    background: hsl(0 0% 10%);
-    border: 1px solid hsl(200 100% 55%);
+    background: var(--dpn-bg);
+    border: 1px solid var(--dpn-border);
     border-radius: 8px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 4px 20px var(--dpn-shadow);
     padding: 8px;
     width: 260px;
   }
@@ -32,8 +53,8 @@ const NOTE_STYLES = `
     min-height: 44px;
     max-height: 140px;
     padding: 6px 8px;
-    background: hsl(0 0% 15%);
-    color: hsl(0 0% 92%);
+    background: var(--dpn-input-bg);
+    color: var(--dpn-text);
     border-radius: 4px;
     font-family: inherit;
     font-size: 12px;
@@ -43,12 +64,12 @@ const NOTE_STYLES = `
   }
 
   textarea::placeholder {
-    color: hsl(0 0% 50%);
+    color: var(--dpn-placeholder);
   }
 
   .hint {
     margin-top: 4px;
-    color: hsl(0 0% 45%);
+    color: var(--dpn-hint);
     font-size: 10px;
   }
 `
@@ -74,9 +95,14 @@ function ensureNoteElementDefined() {
       if (this.showPopover) {
         try { this.showPopover() } catch (err) { /* noop */ }
       }
+
+      // 테마(다크/라이트) + 투명도 - Settings 가 data-theme 속성과 style.opacity 를 관리
+      this._unregisterTheme = Settings.registerPanel(this)
     }
 
     disconnectedCallback() {
+      this._unregisterTheme && this._unregisterTheme()
+      this._unregisterTheme = null
       if (this.hidePopover) {
         try { this.hidePopover() } catch (err) { /* noop */ }
       }

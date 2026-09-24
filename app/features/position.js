@@ -43,7 +43,7 @@ export function Position() {
   }
 }
 
-export function draggable({el, surface = el, cursor = 'move', clickEvent, getSiblings = null, track}) {
+export function draggable({el, surface = el, cursor = 'move', clickEvent, getSiblings = null, track, onDragEnd = null}) {
   const shouldTrack = track ?? !(
     (el.tagName && el.tagName.toUpperCase() === 'VIS-BUG') ||
     isOffBounds(el)
@@ -213,6 +213,7 @@ export function draggable({el, surface = el, cursor = 'move', clickEvent, getSib
     }
 
     if (clickEvent && treatAsClick) clickEvent(e, surface)
+    if (!treatAsClick && onDragEnd) onDragEnd(e)
     state.dragStarted    = false
     state.travelDistance = 0
   }

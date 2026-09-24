@@ -1,19 +1,96 @@
 // 히스토리 패널 스타일
+// 색상은 CSS 변수로 토큰화되어 있으며, :host([data-theme="light"]) 에서 재정의된다.
+// Settings.registerPanel()이 :host 에 data-theme 과 style.opacity를 관리한다 (prefers-color-scheme 미디어쿼리 사용 안 함).
 export const HistoryPanelStyles = `
   :host {
     all: initial;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-size: 12px;
+
+    position: fixed;
+    top: 80px;
+    right: 20px;
+    z-index: 2147483646;
+
+    /* dark (기본) 팔레트 */
+    --dp-bg: hsl(0 0% 10%);
+    --dp-bg-2: hsl(0 0% 15%);
+    --dp-bg-3: hsl(0 0% 25%);
+    --dp-border: hsl(0 0% 25%);
+    --dp-text: hsl(0 0% 90%);
+    --dp-text-hover: hsl(0 0% 90%);
+    --dp-text-muted: hsl(0 0% 60%);
+    --dp-text-dim: hsl(0 0% 70%);
+    --dp-text-faint: hsl(0 0% 50%);
+    --dp-text-faint-2: hsl(0 0% 40%);
+    --dp-accent: hsl(200 100% 60%);
+    --dp-accent-strong: hsl(200 100% 70%);
+    --dp-accent-bg: hsl(200 60% 40%);
+    --dp-danger: hsl(0 60% 40%);
+    --dp-danger-border: hsl(0 70% 50%);
+    --dp-danger-text: hsl(0 70% 60%);
+    --dp-danger-text-2: hsl(0 50% 60%);
+    --dp-success-border: hsl(120 60% 45%);
+    --dp-success-text: hsl(120 60% 65%);
+    --dp-revert-bg: hsl(280 50% 45%);
+    --dp-note-text: hsl(45 90% 65%);
+    --dp-note-bg-hover: hsl(45 60% 35%);
+    --dp-note-border: hsl(45 90% 55%);
+    --dp-key: hsl(50 100% 65%);
+    --dp-path-hover: hsl(30 60% 40%);
+    --dp-notify-bg: hsl(140 60% 35%);
+    --dp-shadow: rgba(0, 0, 0, 0.5);
+    --dp-shadow-drag: rgba(0, 0, 0, 0.65);
+    --dp-scrollbar-track: hsl(0 0% 15%);
+    --dp-scrollbar-thumb: hsl(0 0% 35%);
+  }
+
+  :host([data-theme="light"]) {
+    --dp-bg: #ffffff;
+    --dp-bg-2: #f3f4f6;
+    --dp-bg-3: #e5e7eb;
+    --dp-border: #dcdfe4;
+    --dp-text: #111111;
+    --dp-text-hover: #111111;
+    --dp-text-muted: #6b7280;
+    --dp-text-dim: #444950;
+    --dp-text-faint: #6b7280;
+    --dp-text-faint-2: #6b7280;
+    --dp-accent: hsl(210 90% 42%);
+    --dp-accent-strong: hsl(210 90% 36%);
+    --dp-accent-bg: hsl(210 80% 46%);
+    --dp-danger: hsl(0 70% 46%);
+    --dp-danger-border: hsl(0 70% 50%);
+    --dp-danger-text: hsl(0 65% 42%);
+    --dp-danger-text-2: hsl(0 55% 38%);
+    --dp-success-border: hsl(120 55% 36%);
+    --dp-success-text: hsl(120 55% 30%);
+    --dp-revert-bg: hsl(280 55% 46%);
+    --dp-note-text: hsl(38 85% 34%);
+    --dp-note-bg-hover: hsl(45 75% 88%);
+    --dp-note-border: hsl(40 85% 42%);
+    --dp-key: hsl(35 90% 38%);
+    --dp-path-hover: hsl(30 70% 42%);
+    --dp-notify-bg: hsl(140 55% 34%);
+    --dp-shadow: rgba(20, 20, 30, 0.16);
+    --dp-shadow-drag: rgba(20, 20, 30, 0.28);
+    --dp-scrollbar-track: #eef0f2;
+    --dp-scrollbar-thumb: #c7cbd1;
   }
 
   .panel {
-    background: hsl(0 0% 10%);
-    border: 1px solid hsl(0 0% 25%);
+    background: var(--dp-bg);
+    border: 1px solid var(--dp-border);
     border-radius: 8px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 4px 20px var(--dp-shadow);
     min-width: 220px;
     max-width: 320px;
     overflow: hidden;
+    transition: box-shadow 0.15s, background 0.15s, border-color 0.15s;
+  }
+
+  :host([data-dragging]) .panel {
+    box-shadow: 0 8px 28px var(--dp-shadow-drag);
   }
 
   .header {
@@ -21,34 +98,54 @@ export const HistoryPanelStyles = `
     justify-content: space-between;
     align-items: center;
     padding: 8px 12px;
-    background: hsl(0 0% 15%);
-    border-bottom: 1px solid hsl(0 0% 25%);
+    background: var(--dp-bg-2);
+    border-bottom: 1px solid var(--dp-border);
     cursor: grab;
     user-select: none;
+    gap: 8px;
   }
 
   .header:active {
     cursor: grabbing;
   }
 
+  .header-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .drag-grip {
+    color: var(--dp-text-faint);
+    font-size: 12px;
+    line-height: 1;
+    letter-spacing: -1px;
+    flex: none;
+  }
+
   .title {
-    color: hsl(0 0% 90%);
+    color: var(--dp-text);
     font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .count {
-    color: hsl(200 100% 60%);
+    color: var(--dp-accent);
   }
 
   .buttons {
     display: flex;
     gap: 4px;
+    flex: none;
   }
 
   .buttons button {
     background: transparent;
     border: none;
-    color: hsl(0 0% 60%);
+    color: var(--dp-text-muted);
     cursor: pointer;
     width: 24px;
     height: 24px;
@@ -61,17 +158,18 @@ export const HistoryPanelStyles = `
   }
 
   .buttons button:hover {
-    background: hsl(0 0% 25%);
-    color: hsl(0 0% 90%);
+    background: var(--dp-bg-3);
+    color: var(--dp-text-hover);
   }
 
   .btn-close:hover {
-    background: hsl(0 60% 40%);
+    background: var(--dp-danger);
+    color: hsl(0 0% 100%);
   }
 
   .btn-compare.active,
   .btn-help.active {
-    background: hsl(200 60% 40%);
+    background: var(--dp-accent-bg);
     color: hsl(0 0% 100%);
   }
 
@@ -86,23 +184,23 @@ export const HistoryPanelStyles = `
   }
 
   .content::-webkit-scrollbar-track {
-    background: hsl(0 0% 15%);
+    background: var(--dp-scrollbar-track);
   }
 
   .content::-webkit-scrollbar-thumb {
-    background: hsl(0 0% 35%);
+    background: var(--dp-scrollbar-thumb);
     border-radius: 3px;
   }
 
   .history-empty {
-    color: hsl(0 0% 50%);
+    color: var(--dp-text-faint);
     text-align: center;
     padding: 16px 8px;
     font-style: italic;
   }
 
   .history-item {
-    background: hsl(0 0% 15%);
+    background: var(--dp-bg-2);
     border-radius: 6px;
     padding: 8px 10px;
     margin-bottom: 6px;
@@ -115,7 +213,7 @@ export const HistoryPanelStyles = `
     right: 4px;
     background: transparent;
     border: none;
-    color: hsl(0 0% 40%);
+    color: var(--dp-text-faint-2);
     cursor: pointer;
     width: 18px;
     height: 18px;
@@ -131,7 +229,7 @@ export const HistoryPanelStyles = `
   }
 
   .btn-delete:hover {
-    background: hsl(0 60% 40%);
+    background: var(--dp-danger);
     color: hsl(0 0% 100%);
   }
 
@@ -140,11 +238,11 @@ export const HistoryPanelStyles = `
   }
 
   .history-item.deleted {
-    border-left: 3px solid hsl(0 70% 50%);
+    border-left: 3px solid var(--dp-danger-border);
   }
 
   .history-name {
-    color: hsl(200 100% 70%);
+    color: var(--dp-accent-strong);
     font-weight: 500;
     margin-bottom: 4px;
     word-break: break-all;
@@ -152,27 +250,27 @@ export const HistoryPanelStyles = `
   }
 
   .history-item.deleted .history-name {
-    color: hsl(0 70% 60%);
+    color: var(--dp-danger-text);
   }
 
   .history-detail {
-    color: hsl(0 0% 70%);
+    color: var(--dp-text-dim);
     font-size: 11px;
     line-height: 1.5;
     padding-left: 8px;
   }
 
   .history-item.deleted .history-detail {
-    color: hsl(0 50% 60%);
+    color: var(--dp-danger-text-2);
     font-weight: 500;
   }
 
   .history-item.screenshot {
-    border-left: 3px solid hsl(120 60% 45%);
+    border-left: 3px solid var(--dp-success-border);
   }
 
   .history-item.screenshot .history-name {
-    color: hsl(120 60% 65%);
+    color: var(--dp-success-text);
   }
 
   .history-item.screenshot .history-name::before {
@@ -185,7 +283,7 @@ export const HistoryPanelStyles = `
     right: 44px;
     background: transparent;
     border: none;
-    color: hsl(0 0% 40%);
+    color: var(--dp-text-faint-2);
     cursor: pointer;
     width: 18px;
     height: 18px;
@@ -201,7 +299,7 @@ export const HistoryPanelStyles = `
   }
 
   .btn-revert:hover {
-    background: hsl(280 50% 45%);
+    background: var(--dp-revert-bg);
     color: hsl(0 0% 100%);
   }
 
@@ -211,7 +309,7 @@ export const HistoryPanelStyles = `
     gap: 4px;
     margin-top: 4px;
     padding-left: 8px;
-    color: hsl(45 90% 65%);
+    color: var(--dp-note-text);
     font-size: 11px;
     line-height: 1.5;
   }
@@ -225,7 +323,7 @@ export const HistoryPanelStyles = `
     flex: none;
     background: transparent;
     border: none;
-    color: hsl(45 90% 65%);
+    color: var(--dp-note-text);
     cursor: pointer;
     width: 16px;
     height: 16px;
@@ -236,16 +334,20 @@ export const HistoryPanelStyles = `
   }
 
   .btn-edit-note:hover {
-    background: hsl(45 60% 35%);
+    background: var(--dp-note-bg-hover);
     color: hsl(0 0% 100%);
   }
 
+  :host([data-theme="light"]) .btn-edit-note:hover {
+    color: var(--dp-note-text);
+  }
+
   .history-item.page-note {
-    border-left: 3px solid hsl(45 90% 55%);
+    border-left: 3px solid var(--dp-note-border);
   }
 
   .history-item.page-note .history-name {
-    color: hsl(45 90% 65%);
+    color: var(--dp-note-text);
   }
 
   .history-item.page-note .btn-edit-note {
@@ -267,21 +369,21 @@ export const HistoryPanelStyles = `
   }
 
   .help-section {
-    background: hsl(0 0% 15%);
+    background: var(--dp-bg-2);
     border-radius: 6px;
     padding: 12px;
   }
 
   .help-title {
-    color: hsl(200 100% 70%);
+    color: var(--dp-accent-strong);
     font-weight: 600;
     margin-bottom: 10px;
     padding-bottom: 8px;
-    border-bottom: 1px solid hsl(0 0% 25%);
+    border-bottom: 1px solid var(--dp-border);
   }
 
   .help-item {
-    color: hsl(0 0% 80%);
+    color: var(--dp-text-dim);
     font-size: 11px;
     line-height: 1.8;
     display: flex;
@@ -289,7 +391,7 @@ export const HistoryPanelStyles = `
   }
 
   .help-item .key {
-    color: hsl(50 100% 65%);
+    color: var(--dp-key);
     font-family: monospace;
     font-weight: 500;
     min-width: 100px;
@@ -301,7 +403,7 @@ export const HistoryPanelStyles = `
     right: 24px;
     background: transparent;
     border: none;
-    color: hsl(0 0% 40%);
+    color: var(--dp-text-faint-2);
     cursor: pointer;
     width: 18px;
     height: 18px;
@@ -317,7 +419,7 @@ export const HistoryPanelStyles = `
   }
 
   .btn-copy:hover {
-    background: hsl(200 60% 40%);
+    background: var(--dp-accent-bg);
     color: hsl(0 0% 100%);
   }
 
@@ -339,7 +441,7 @@ export const HistoryPanelStyles = `
   .btn-copy-path {
     background: transparent;
     border: none;
-    color: hsl(0 0% 40%);
+    color: var(--dp-text-faint-2);
     cursor: pointer;
     width: 18px;
     height: 18px;
@@ -353,12 +455,12 @@ export const HistoryPanelStyles = `
   }
 
   .btn-copy-image:hover {
-    background: hsl(200 60% 40%);
+    background: var(--dp-accent-bg);
     color: hsl(0 0% 100%);
   }
 
   .btn-copy-path:hover {
-    background: hsl(30 60% 40%);
+    background: var(--dp-path-hover);
     color: hsl(0 0% 100%);
   }
 
@@ -372,7 +474,7 @@ export const HistoryPanelStyles = `
     bottom: 8px;
     left: 50%;
     transform: translateX(-50%) translateY(10px);
-    background: hsl(140 60% 35%);
+    background: var(--dp-notify-bg);
     color: white;
     padding: 4px 12px;
     border-radius: 4px;

@@ -3,6 +3,8 @@
 
 import { ChangeTracker } from '../../features/change-tracker'
 import { showPropHint, hidePropHint } from '../../features/prop-hint'
+import { Settings } from '../../features/settings'
+import { makeMovable } from '../../utilities/panel-dock'
 import { PropsPanelStyles } from './props-panel.styles'
 
 function computeSizeMax(el, prop) {
@@ -135,6 +137,8 @@ export class PropsPanel extends HTMLElement {
     this._suppressNextBlur = false
     this._session = null // 진행 중인 실시간 편집 제스처 { prop, startValues: Map<el,string> }
     this._hideHintTimer = null
+    this._unregisterTheme = null
+    this._undock = null
   }
 
   set visbug(vb) {
@@ -153,17 +157,16 @@ export class PropsPanel extends HTMLElement {
   connectedCallback() {
     this.ensureRendered()
 
-    this.style.position = 'fixed'
-    this.style.top = '72px'
-    this.style.right = '12px'
-    this.style.left = 'auto'
-    this.style.width = 'auto'
-    this.style.maxWidth = '240px'
-    this.style.zIndex = '2147483646'
-    this.style.pointerEvents = 'none'
-
     this.setAttribute('popover', 'manual')
     this.showPopover && this.showPopover()
+
+    // 전역 설정(테마/불투명도)을 등록하면 data-theme 속성과 style.opacity 가
+    // Settings 에 의해 자동으로 적용·갱신된다.
+    this._unregisterTheme = Settings.registerPanel(this)
+
+    // 헤더를 손잡이로 자유 이동 가능하게 만들고 위치를 기억한다.
+    const header = this.$shadow.querySelector('.header')
+    this._undock = makeMovable({ host: this, handle: header, key: 'props' })
   }
 
   disconnectedCallback() {
@@ -172,6 +175,8 @@ export class PropsPanel extends HTMLElement {
     if (this._visbug && this._visbug.selectorEngine && this._onSelectedUpdate) {
       this._visbug.selectorEngine.removeSelectedCallback(this._onSelectedUpdate)
     }
+    this._unregisterTheme && this._unregisterTheme()
+    this._undock && this._undock()
     this.hidePopover && this.hidePopover()
   }
 
@@ -200,7 +205,8 @@ export class PropsPanel extends HTMLElement {
 
     return `
       <div class="panel" hidden>
-        <div class="header">
+        <div class="header" title="드래그해서 이동">
+          <span class="grip-icon" aria-hidden="true">⋮⋮</span>
           <span class="label">요소 없음</span>
         </div>
         <div class="body">

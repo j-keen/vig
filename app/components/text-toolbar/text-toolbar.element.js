@@ -13,6 +13,7 @@
 import { ChangeTracker } from '../../features/change-tracker'
 import { collectPageFonts } from '../../utilities/palette'
 import { showPropHint, hidePropHint } from '../../features/prop-hint'
+import { Settings } from '../../features/settings'
 import { TextToolbarStyles } from './text-toolbar.styles'
 import './palette-popover.element'
 
@@ -100,12 +101,15 @@ export class TextToolbar extends HTMLElement {
     this._onResize = () => this.position()
     window.addEventListener('scroll', this._onScroll, true)
     window.addEventListener('resize', this._onResize)
+
+    this._unregisterTheme = Settings.registerPanel(this)
   }
 
   disconnectedCallback() {
     window.removeEventListener('scroll', this._onScroll, true)
     window.removeEventListener('resize', this._onResize)
     this.abortLiveState()
+    if (this._unregisterTheme) { this._unregisterTheme(); this._unregisterTheme = null }
   }
 
   render() {

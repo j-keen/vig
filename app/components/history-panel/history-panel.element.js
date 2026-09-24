@@ -6,15 +6,17 @@ import { ChangeTracker } from '../../features/change-tracker'
 import { HistoryPanelStyles } from './history-panel.styles'
 import { AIFormatter } from '../../features/ai-formatter'
 import { copyScreenshotImage, copyScreenshotPath, captureAnnotated } from '../../features/screenshot'
+import { Settings } from '../../features/settings'
+import { makeMovable } from '../../utilities/panel-dock'
 
 export class HistoryPanel extends HTMLElement {
   constructor() {
     super()
     this.$shadow = this.attachShadow({ mode: 'closed' })
     this.isMinimized = false
-    this.isDragging = false
-    this.dragOffset = { x: 0, y: 0 }
     this.updateInterval = null
+    this._unregisterTheme = null
+    this._undock = null
 
     // 원본 보기(비교) 상태 - 누르고 있기(hold) + `\` 토글 두 입력을 함께 지원
     this._compareHold = false
@@ -35,7 +37,6 @@ export class HistoryPanel extends HTMLElement {
   connectedCallback() {
     this.$shadow.innerHTML = this.render()
     this.applyStyles()
-    this.setupDragging()
     this.setupButtons()
     this.startAutoUpdate()
 
@@ -43,11 +44,12 @@ export class HistoryPanel extends HTMLElement {
     document.addEventListener('touchend', this._onDocumentMouseUp)
     document.addEventListener('keydown', this._onDocumentKeydown)
 
-    // 초기 위치 설정
-    this.style.position = 'fixed'
-    this.style.top = '80px'
-    this.style.right = '20px'
-    this.style.zIndex = '2147483646'
+    // 테마(다크/라이트) + 투명도 - Settings 가 data-theme 속성과 style.opacity 를 관리
+    this._unregisterTheme = Settings.registerPanel(this)
+
+    // 자유 이동 + 위치 기억 (기본 위치는 CSS의 :host 규칙)
+    const headerEl = this.$shadow.querySelector('.header')
+    this._undock = makeMovable({ host: this, handle: headerEl, key: 'history' })
 
     // popover로 최상위 레이어 유지
     this.setAttribute('popover', 'manual')
@@ -61,6 +63,8 @@ export class HistoryPanel extends HTMLElement {
     document.removeEventListener('mouseup', this._onDocumentMouseUp)
     document.removeEventListener('touchend', this._onDocumentMouseUp)
     document.removeEventListener('keydown', this._onDocumentKeydown)
+    this._unregisterTheme && this._unregisterTheme()
+    this._undock && this._undock()
     this.hidePopover && this.hidePopover()
   }
 
@@ -119,7 +123,10 @@ export class HistoryPanel extends HTMLElement {
     return `
       <div class="panel">
         <div class="header">
-          <span class="title">변경 내역 (<span class="count">0</span>개)</span>
+          <div class="header-title">
+            <span class="drag-grip" aria-hidden="true">⋮⋮</span>
+            <span class="title">변경 이력 <span class="count">0</span></span>
+          </div>
           <div class="buttons">
             <button class="btn-copy-all" title="전체 복사">📋</button>
             <button class="btn-annotated-screenshot" title="표시 스크린샷 복사">🖍️</button>
@@ -154,34 +161,6 @@ export class HistoryPanel extends HTMLElement {
     `
   }
 
-  setupDragging() {
-    const header = this.$shadow.querySelector('.header')
-
-    header.addEventListener('mousedown', (e) => {
-      if (e.target.closest('button')) return
-
-      this.isDragging = true
-      const rect = this.getBoundingClientRect()
-      this.dragOffset.x = e.clientX - rect.left
-      this.dragOffset.y = e.clientY - rect.top
-      header.style.cursor = 'grabbing'
-    })
-
-    document.addEventListener('mousemove', (e) => {
-      if (!this.isDragging) return
-
-      e.preventDefault()
-      this.style.left = (e.clientX - this.dragOffset.x) + 'px'
-      this.style.top = (e.clientY - this.dragOffset.y) + 'px'
-      this.style.right = 'auto'
-    })
-
-    document.addEventListener('mouseup', () => {
-      this.isDragging = false
-      const header = this.$shadow.querySelector('.header')
-      if (header) header.style.cursor = 'grab'
-    })
-  }
 
   setupButtons() {
     const btnMinimize = this.$shadow.querySelector('.btn-minimize')

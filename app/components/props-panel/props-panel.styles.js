@@ -1,7 +1,16 @@
 // 속성 패널(Figma 스타일) 스타일
+// 테마(dark/light)는 Settings.registerPanel 이 호스트에 심어주는 data-theme 속성이
+// 유일한 기준이다 (prefers-color-scheme 미디어쿼리는 사용하지 않는다).
+// opacity 는 Settings 가 호스트(:host)에 직접 적용하므로 이 스타일시트에서는 건드리지 않는다.
 export const PropsPanelStyles = `
   :host {
     all: initial;
+    position: fixed;
+    top: 72px;
+    right: 12px;
+    max-width: 240px;
+    z-index: 2147483646;
+    pointer-events: none;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-size: 11px;
   }
@@ -20,13 +29,19 @@ export const PropsPanelStyles = `
     pointer-events: auto;
   }
 
-  @media (prefers-color-scheme: light) {
-    .panel {
-      background: hsl(0 0% 98%);
-      border-color: hsl(0 0% 82%);
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-      color: hsl(0 0% 20%);
-    }
+  :host([data-theme="light"]) .panel {
+    background: hsl(0 0% 100%);
+    border-color: hsl(0 0% 85%);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    color: #111;
+  }
+
+  :host([data-dragging]) .panel {
+    box-shadow: 0 10px 34px rgba(0, 0, 0, 0.55);
+  }
+
+  :host([data-theme="light"][data-dragging]) .panel {
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
   }
 
   .panel[hidden] {
@@ -36,7 +51,7 @@ export const PropsPanelStyles = `
   .header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 6px;
     padding: 8px 10px;
     background: hsl(0 0% 15%);
     border-bottom: 1px solid hsl(0 0% 25%);
@@ -44,24 +59,41 @@ export const PropsPanelStyles = `
     user-select: none;
   }
 
-  @media (prefers-color-scheme: light) {
-    .header {
-      background: hsl(0 0% 93%);
-      border-bottom-color: hsl(0 0% 82%);
-    }
+  :host([data-theme="light"]) .header {
+    background: hsl(0 0% 95%);
+    border-bottom-color: hsl(0 0% 85%);
   }
 
   .header:active {
     cursor: grabbing;
   }
 
+  :host([data-dragging]) .header {
+    cursor: grabbing;
+  }
+
+  .grip-icon {
+    flex: none;
+    color: hsl(0 0% 45%);
+    letter-spacing: -1px;
+    font-size: 12px;
+  }
+
+  :host([data-theme="light"]) .grip-icon {
+    color: hsl(0 0% 60%);
+  }
+
   .header .label {
+    flex: 1 1 auto;
     font-weight: 600;
     color: hsl(200 100% 70%);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    max-width: 170px;
+  }
+
+  :host([data-theme="light"]) .header .label {
+    color: hsl(205 90% 40%);
   }
 
   .body {
@@ -80,15 +112,17 @@ export const PropsPanelStyles = `
     border-radius: 3px;
   }
 
+  :host([data-theme="light"]) .body::-webkit-scrollbar-thumb {
+    background: hsl(0 0% 80%);
+  }
+
   section {
     padding: 8px 0;
     border-bottom: 1px solid hsl(0 0% 20%);
   }
 
-  @media (prefers-color-scheme: light) {
-    section {
-      border-bottom-color: hsl(0 0% 88%);
-    }
+  :host([data-theme="light"]) section {
+    border-bottom-color: hsl(0 0% 90%);
   }
 
   section:last-child {
@@ -102,10 +136,18 @@ export const PropsPanelStyles = `
     letter-spacing: 0.02em;
   }
 
+  :host([data-theme="light"]) .section-title {
+    color: hsl(0 0% 40%);
+  }
+
   .hint {
     color: hsl(40 90% 60%);
     font-size: 10px;
     padding: 2px 0 4px;
+  }
+
+  :host([data-theme="light"]) .hint {
+    color: hsl(35 85% 40%);
   }
 
   .row {
@@ -136,10 +178,6 @@ export const PropsPanelStyles = `
     margin-bottom: 0;
   }
 
-  .num-row.active-row {
-    background: hsla(200, 100%, 55%, 0.12);
-  }
-
   .num-row-top {
     display: flex;
     align-items: center;
@@ -153,6 +191,10 @@ export const PropsPanelStyles = `
     width: 16px;
     flex: none;
     text-align: center;
+  }
+
+  :host([data-theme="light"]) .num-label {
+    color: hsl(0 0% 45%);
   }
 
   .num-label.disabled {
@@ -179,11 +221,9 @@ export const PropsPanelStyles = `
     user-select: none;
   }
 
-  @media (prefers-color-scheme: light) {
-    .step-btn {
-      background: hsl(0 0% 94%);
-      color: hsl(0 0% 40%);
-    }
+  :host([data-theme="light"]) .step-btn {
+    background: hsl(0 0% 92%);
+    color: hsl(0 0% 35%);
   }
 
   .step-btn:first-child {
@@ -227,10 +267,8 @@ export const PropsPanelStyles = `
     background: hsl(0 0% 28%);
   }
 
-  @media (prefers-color-scheme: light) {
-    .range-input::-webkit-slider-runnable-track {
-      background: hsl(0 0% 82%);
-    }
+  :host([data-theme="light"]) .range-input::-webkit-slider-runnable-track {
+    background: hsl(0 0% 80%);
   }
 
   .range-input::-webkit-slider-thumb {
@@ -251,6 +289,10 @@ export const PropsPanelStyles = `
     background: hsl(0 0% 28%);
   }
 
+  :host([data-theme="light"]) .range-input::-moz-range-track {
+    background: hsl(0 0% 80%);
+  }
+
   .range-input::-moz-range-thumb {
     width: 14px;
     height: 14px;
@@ -265,6 +307,11 @@ export const PropsPanelStyles = `
     outline: 1px solid hsla(200, 100%, 55%, 0.35);
   }
 
+  :host([data-theme="light"]) .active-row {
+    background: hsla(205, 100%, 50%, 0.08);
+    outline-color: hsla(205, 100%, 45%, 0.3);
+  }
+
   .input-wrap {
     display: flex;
     align-items: center;
@@ -276,11 +323,9 @@ export const PropsPanelStyles = `
     min-width: 0;
   }
 
-  @media (prefers-color-scheme: light) {
-    .input-wrap {
-      background: hsl(0 0% 100%);
-      border-color: hsl(0 0% 80%);
-    }
+  :host([data-theme="light"]) .input-wrap {
+    background: hsl(0 0% 100%);
+    border-color: hsl(0 0% 78%);
   }
 
   .input-wrap:focus-within {
@@ -305,6 +350,10 @@ export const PropsPanelStyles = `
     flex: none;
   }
 
+  :host([data-theme="light"]) .unit {
+    color: hsl(0 0% 55%);
+  }
+
   select.select-input {
     width: 100%;
     background: hsl(0 0% 16%);
@@ -315,11 +364,9 @@ export const PropsPanelStyles = `
     font-size: 11px;
   }
 
-  @media (prefers-color-scheme: light) {
-    select.select-input {
-      background: hsl(0 0% 100%);
-      border-color: hsl(0 0% 80%);
-    }
+  :host([data-theme="light"]) select.select-input {
+    background: hsl(0 0% 100%);
+    border-color: hsl(0 0% 78%);
   }
 
   .align-row {
@@ -338,16 +385,18 @@ export const PropsPanelStyles = `
     font-size: 11px;
   }
 
-  @media (prefers-color-scheme: light) {
-    .align-btn {
-      background: hsl(0 0% 100%);
-      border-color: hsl(0 0% 80%);
-      color: hsl(0 0% 30%);
-    }
+  :host([data-theme="light"]) .align-btn {
+    background: hsl(0 0% 100%);
+    border-color: hsl(0 0% 78%);
+    color: hsl(0 0% 30%);
   }
 
   .align-btn:hover {
     background: hsl(0 0% 22%);
+  }
+
+  :host([data-theme="light"]) .align-btn:hover {
+    background: hsl(0 0% 92%);
   }
 
   .align-btn.active {
@@ -374,6 +423,10 @@ export const PropsPanelStyles = `
     flex: none;
   }
 
+  :host([data-theme="light"]) .opacity-value {
+    color: hsl(0 0% 40%);
+  }
+
   .color-row {
     display: flex;
     align-items: center;
@@ -391,6 +444,10 @@ export const PropsPanelStyles = `
     color: hsl(0 0% 65%);
   }
 
+  :host([data-theme="light"]) .color-row .color-label {
+    color: hsl(0 0% 40%);
+  }
+
   .color-row input[type="color"] {
     width: 22px;
     height: 22px;
@@ -400,6 +457,10 @@ export const PropsPanelStyles = `
     background: transparent;
     cursor: pointer;
     flex: none;
+  }
+
+  :host([data-theme="light"]) .color-row input[type="color"] {
+    border-color: hsl(0 0% 78%);
   }
 
   .color-row .hex-input {
@@ -414,11 +475,9 @@ export const PropsPanelStyles = `
     min-width: 0;
   }
 
-  @media (prefers-color-scheme: light) {
-    .color-row .hex-input {
-      background: hsl(0 0% 100%);
-      border-color: hsl(0 0% 80%);
-    }
+  :host([data-theme="light"]) .color-row .hex-input {
+    background: hsl(0 0% 100%);
+    border-color: hsl(0 0% 78%);
   }
 `
 

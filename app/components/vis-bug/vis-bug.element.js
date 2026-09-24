@@ -15,6 +15,7 @@ import {
   DepthSelector
 } from '../../features/'
 import * as Features from '../../features/'
+import * as Utils from '../../utilities/'
 
 import {
   VisBugStyles,
@@ -102,6 +103,7 @@ export default class VisBug extends HTMLElement {
     this.notesFeature && this.notesFeature()
     this.textToolbarFeature && this.textToolbarFeature()
     Features.PropHint && Features.PropHint.teardownPropHint()
+    this._offSettings && this._offSettings()
     this.cleanup()
     this.selectorEngine.disconnect()
     hotkeys.unbind(
@@ -147,7 +149,8 @@ export default class VisBug extends HTMLElement {
         el:this,
         surface: toolButton,
         cursor: 'pointer',
-        clickEvent: clickEvent
+        clickEvent: clickEvent,
+        onDragEnd: () => this.saveToolbarPosition(),
       })
     })
 
@@ -155,6 +158,7 @@ export default class VisBug extends HTMLElement {
       el:this,
       surface: main_ol,
       cursor: 'grab',
+      onDragEnd: () => this.saveToolbarPosition(),
     })
 
     Object.entries(this.toolbar_model).forEach(([key, value]) =>
@@ -175,6 +179,61 @@ export default class VisBug extends HTMLElement {
 
     // AI 복사 버튼 호버 툴팁 설정
     setupAICopyTooltip(this.$shadow)
+
+    this.setupSettings()
+  }
+
+  saveToolbarPosition() {
+    const r = this.getBoundingClientRect()
+    Features.Settings && Features.Settings.setPanelPosition('toolbar', { left: Math.round(r.left), top: Math.round(r.top) })
+  }
+
+  // 전역 설정(테마·투명도·패널 위치) — 툴바 ⚙ 팝오버
+  setupSettings() {
+    const { Settings } = Features
+    const { applySavedPosition } = Utils
+    const root = this.$shadow
+    const toggle  = root.querySelector('[data-settings-toggle]')
+    const popover = root.querySelector('[settings-popover]')
+    if (!toggle || !popover || !Settings) return
+
+    const sync = s => {
+      this.setAttribute('color-scheme', s.theme)
+      this.style.opacity = String(s.opacity)
+      // 호스트에는 등장 애니메이션(fill: forwards)이 opacity 를 잠그므로 내부 요소에 실제 적용
+      root.querySelectorAll('ol, [settings-popover]').forEach(el => el.style.opacity = String(s.opacity))
+      root.querySelectorAll('input[name="theme"]').forEach(r => r.checked = r.value === s.theme)
+      const range = root.querySelector('input[name="opacity"]')
+      const out   = root.querySelector('.opacity-value')
+      if (range) range.value = String(Math.round(s.opacity * 100))
+      if (out)   out.textContent = `${Math.round(s.opacity * 100)}%`
+    }
+
+    this._offSettings = Settings.onChange(sync)
+    Settings.load().then(s => {
+      sync(s)
+      applySavedPosition && applySavedPosition(this, 'toolbar')
+    })
+
+    toggle.addEventListener('click', e => {
+      e.stopPropagation()
+      const open = popover.hasAttribute('hidden')
+      popover.toggleAttribute('hidden', !open)
+      toggle.toggleAttribute('data-active', open)
+    })
+    root.querySelectorAll('input[name="theme"]').forEach(r =>
+      r.addEventListener('change', () => Settings.set({ theme: r.value })))
+    const range = root.querySelector('input[name="opacity"]')
+    range && range.addEventListener('input', () => Settings.set({ opacity: Number(range.value) / 100 }))
+    const reset = root.querySelector('button[name="reset-positions"]')
+    reset && reset.addEventListener('click', () => Settings.resetPanelPositions())
+
+    // 팝오버 안에서의 키 입력이 페이지 단축키로 새지 않게
+    popover.addEventListener('keydown', e => e.stopPropagation())
+    popover.addEventListener('keyup', e => e.stopPropagation())
+    // 팝오버 클릭이 툴바 드래그/도구 선택으로 번지지 않게
+    popover.addEventListener('mousedown', e => e.stopPropagation())
+    popover.addEventListener('click', e => e.stopPropagation())
   }
 
   cleanup() {
@@ -238,13 +297,13 @@ export default class VisBug extends HTMLElement {
       <ol constructible-support="${constructibleStylesheetSupport ? 'false':'true'}">
         ${Object.entries(this.toolbar_model).reduce((list, [key, tool]) => `
           ${list}
-          <li aria-label="${tool.label} Tool" aria-description="${tool.description}" aria-hotkey="${key}" data-tool="${tool.tool}" data-active="${key == 'l'}">
+          <li aria-label="${tool.label} Tool" aria-description="${tool.description}" aria-hotkey="${key}" data-tool="${tool.tool}" data-active="${key == 'l'}" ${tool.hidden ? 'hidden' : ''}>
             ${tool.icon}
             ${this.demoTip({key, ...tool})}
           </li>
         `,'')}
       </ol>
-      <ol colors>
+      <ol colors hidden>
         <li class="color" id="foreground" aria-label="글자색" aria-description="글자 색을 바꿉니다">
           <input type="color">
           ${Icons.color_text}
@@ -258,6 +317,42 @@ export default class VisBug extends HTMLElement {
           ${Icons.color_border}
         </li>
       </ol>
+      <ol settings>
+        <li data-settings-toggle aria-label="설정" title="설정: 테마 · 투명도 · 패널 위치">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </li>
+      </ol>
+      <div settings-popover hidden>
+        <div class="row"><b>테마</b>
+          <label><input type="radio" name="theme" value="auto"> 자동</label>
+          <label><input type="radio" name="theme" value="dark"> 다크</label>
+          <label><input type="radio" name="theme" value="light"> 라이트</label>
+        </div>
+        <div class="row"><b>투명도</b>
+          <input type="range" name="opacity" min="30" max="100" step="5"> <span class="opacity-value">100%</span>
+        </div>
+        <div class="row">
+          <button type="button" name="reset-positions">패널 위치 초기화</button>
+        </div>
+      </div>
+      <style>
+        ol[settings] > li { box-sizing:border-box; padding:0; cursor:pointer; color: inherit; }
+        ol[settings] > li:hover { background: hsla(0,0%,50%,.2); }
+        ol[settings] > li[data-active="true"] { color: var(--neon-pink, #ff2fd0); }
+        [settings-popover] {
+          position:absolute; left: calc(100% + 8px); bottom: 0; min-width: 220px;
+          background: var(--theme-bg, #222); color: var(--theme-color, #eee);
+          border: 1px solid hsla(0,0%,50%,.35); border-radius: 8px; padding: 10px 12px;
+          font-size: 12px; box-shadow: 0 6px 20px rgba(0,0,0,.35); z-index: 5;
+        }
+        [settings-popover] .row { display:flex; align-items:center; gap:8px; margin: 6px 0; flex-wrap: wrap; }
+        [settings-popover] b { min-width: 42px; font-weight: 600; }
+        [settings-popover] label { display:flex; align-items:center; gap:3px; cursor:pointer; }
+        [settings-popover] input[type=range] { flex: 1; min-width: 90px; }
+        [settings-popover] button { font: inherit; padding: 4px 8px; border-radius: 6px; border: 1px solid hsla(0,0%,50%,.4); background: transparent; color: inherit; cursor: pointer; }
+        [settings-popover] button:hover { background: hsla(0,0%,50%,.2); }
+        :host([color-scheme="light"]) [settings-popover] { --theme-bg: #fff; --theme-color: #111; }
+      </style>
     `
   }
 

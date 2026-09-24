@@ -1,19 +1,67 @@
 // 플로팅 텍스트 미니 툴바 스타일 (Canva 스타일)
+// Theming: Settings.registerPanel(host) sets [data-theme="dark"|"light"] and
+// host.style.opacity - this stylesheet is the single source of truth for
+// what each theme looks like (no prefers-color-scheme queries here; opacity
+// is never set from CSS, only by Settings).
 export const TextToolbarStyles = `
   :host {
     all: initial;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-size: 12px;
+
+    /* dark theme (default) */
+    --dp-bg: hsl(0 0% 10%);
+    --dp-bg-elevated: hsl(0 0% 12%);
+    --dp-control-bg: hsl(0 0% 16%);
+    --dp-control-hover-bg: hsl(0 0% 22%);
+    --dp-control-hover-bg-strong: hsl(0 0% 25%);
+    --dp-border: hsl(0 0% 25%);
+    --dp-border-soft: hsl(0 0% 22%);
+    --dp-border-strong: hsl(0 0% 28%);
+    --dp-text: hsl(0 0% 85%);
+    --dp-text-strong: hsl(0 0% 90%);
+    --dp-text-soft: hsl(0 0% 65%);
+    --dp-text-softer: hsl(0 0% 50%);
+    --dp-text-on-accent: hsl(0 0% 100%);
+    --dp-thumb-ring: hsl(0 0% 100%);
+    --dp-track-bg: hsl(0 0% 28%);
+    --dp-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    --dp-swatch-border: hsl(0 0% 45%);
+
+    /* accent stays identical across themes */
+    --dp-accent: hsl(200 80% 35%);
+    --dp-accent-strong: hsl(200 80% 30%);
+    --dp-accent-thumb: hsl(200 90% 60%);
+  }
+
+  :host([data-theme="light"]) {
+    --dp-bg: #ffffff;
+    --dp-bg-elevated: #ffffff;
+    --dp-control-bg: hsl(0 0% 95%);
+    --dp-control-hover-bg: hsl(0 0% 90%);
+    --dp-control-hover-bg-strong: hsl(0 0% 86%);
+    --dp-border: hsl(0 0% 85%);
+    --dp-border-soft: hsl(0 0% 90%);
+    --dp-border-strong: hsl(0 0% 82%);
+    --dp-text: #111111;
+    --dp-text-strong: #111111;
+    --dp-text-soft: hsl(0 0% 35%);
+    --dp-text-softer: hsl(0 0% 45%);
+    --dp-text-on-accent: hsl(0 0% 100%);
+    --dp-thumb-ring: #ffffff;
+    --dp-track-bg: hsl(0 0% 82%);
+    --dp-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+    --dp-swatch-border: hsl(0 0% 70%);
   }
 
   .toolbar {
     display: flex;
     flex-direction: column;
     gap: 4px;
-    background: hsl(0 0% 10%);
-    border: 1px solid hsl(0 0% 25%);
+    background: var(--dp-bg);
+    border: 1px solid var(--dp-border);
     border-radius: 8px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    box-shadow: var(--dp-shadow);
     padding: 4px;
   }
 
@@ -29,7 +77,7 @@ export const TextToolbarStyles = `
     align-items: center;
     gap: 10px;
     padding: 6px 6px 2px;
-    border-top: 1px solid hsl(0 0% 22%);
+    border-top: 1px solid var(--dp-border-soft);
     white-space: nowrap;
   }
 
@@ -40,7 +88,7 @@ export const TextToolbarStyles = `
   .btn {
     background: transparent;
     border: none;
-    color: hsl(0 0% 85%);
+    color: var(--dp-text);
     cursor: pointer;
     width: 26px;
     height: 26px;
@@ -54,19 +102,24 @@ export const TextToolbarStyles = `
     flex: none;
   }
 
+  .btn svg {
+    stroke: currentColor;
+    fill: none;
+  }
+
   .btn:hover {
-    background: hsl(0 0% 22%);
+    background: var(--dp-control-hover-bg);
   }
 
   .btn.active {
-    background: hsl(200 80% 35%);
-    color: hsl(0 0% 100%);
+    background: var(--dp-accent);
+    color: var(--dp-text-on-accent);
   }
 
   .sep {
     width: 1px;
     height: 18px;
-    background: hsl(0 0% 25%);
+    background: var(--dp-border);
     margin: 0 3px;
     flex: none;
   }
@@ -81,9 +134,9 @@ export const TextToolbarStyles = `
   }
 
   .stepper {
-    background: hsl(0 0% 16%);
+    background: var(--dp-control-bg);
     border: none;
-    color: hsl(0 0% 80%);
+    color: var(--dp-text);
     cursor: pointer;
     width: 18px;
     height: 26px;
@@ -97,19 +150,20 @@ export const TextToolbarStyles = `
   }
 
   .stepper:hover {
-    background: hsl(0 0% 25%);
+    background: var(--dp-control-hover-bg-strong);
   }
 
   .stepper:active {
-    background: hsl(200 80% 30%);
+    background: var(--dp-accent-strong);
+    color: var(--dp-text-on-accent);
   }
 
   .size-input {
     all: unset;
     width: 32px;
     text-align: center;
-    color: hsl(0 0% 90%);
-    background: hsl(0 0% 16%);
+    color: var(--dp-text-strong);
+    background: var(--dp-control-bg);
     border-radius: 4px;
     padding: 4px 2px;
     box-sizing: border-box;
@@ -130,13 +184,13 @@ export const TextToolbarStyles = `
 
   input[type="range"]::-webkit-slider-runnable-track {
     height: 4px;
-    background: hsl(0 0% 28%);
+    background: var(--dp-track-bg);
     border-radius: 2px;
   }
 
   input[type="range"]::-moz-range-track {
     height: 4px;
-    background: hsl(0 0% 28%);
+    background: var(--dp-track-bg);
     border-radius: 2px;
   }
 
@@ -147,8 +201,8 @@ export const TextToolbarStyles = `
     height: 16px;
     margin-top: -6px;
     border-radius: 50%;
-    background: hsl(200 90% 60%);
-    border: 2px solid hsl(0 0% 100%);
+    background: var(--dp-accent-thumb);
+    border: 2px solid var(--dp-thumb-ring);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
   }
 
@@ -156,8 +210,8 @@ export const TextToolbarStyles = `
     width: 16px;
     height: 16px;
     border-radius: 50%;
-    background: hsl(200 90% 60%);
-    border: 2px solid hsl(0 0% 100%);
+    background: var(--dp-accent-thumb);
+    border: 2px solid var(--dp-thumb-ring);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
   }
 
@@ -174,8 +228,8 @@ export const TextToolbarStyles = `
     max-width: 110px;
     overflow: hidden;
     text-overflow: ellipsis;
-    color: hsl(0 0% 90%);
-    background: hsl(0 0% 16%);
+    color: var(--dp-text-strong);
+    background: var(--dp-control-bg);
     border-radius: 4px;
     padding: 6px 8px;
     box-sizing: border-box;
@@ -184,7 +238,7 @@ export const TextToolbarStyles = `
   }
 
   .font-trigger:hover {
-    background: hsl(0 0% 22%);
+    background: var(--dp-control-hover-bg);
   }
 
   .font-menu {
@@ -194,10 +248,10 @@ export const TextToolbarStyles = `
     min-width: 160px;
     max-height: 220px;
     overflow-y: auto;
-    background: hsl(0 0% 12%);
-    border: 1px solid hsl(0 0% 28%);
+    background: var(--dp-bg-elevated);
+    border: 1px solid var(--dp-border-strong);
     border-radius: 6px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    box-shadow: var(--dp-shadow);
     padding: 4px;
     z-index: 1;
   }
@@ -207,13 +261,13 @@ export const TextToolbarStyles = `
   }
 
   .font-menu-group {
-    color: hsl(0 0% 50%);
+    color: var(--dp-text-softer);
     font-size: 10px;
     padding: 6px 8px 2px;
   }
 
   .font-menu-row {
-    color: hsl(0 0% 88%);
+    color: var(--dp-text-strong);
     font-size: 12px;
     padding: 6px 8px;
     border-radius: 4px;
@@ -224,12 +278,12 @@ export const TextToolbarStyles = `
   }
 
   .font-menu-row:hover {
-    background: hsl(200 80% 30%);
-    color: hsl(0 0% 100%);
+    background: var(--dp-accent-strong);
+    color: var(--dp-text-on-accent);
   }
 
   .font-menu-empty {
-    color: hsl(0 0% 50%);
+    color: var(--dp-text-softer);
     font-style: italic;
     padding: 6px 8px;
   }
@@ -241,13 +295,13 @@ export const TextToolbarStyles = `
     width: 14px;
     height: 14px;
     border-radius: 3px;
-    border: 1px solid hsl(0 0% 45%);
+    border: 1px solid var(--dp-swatch-border);
     background: #000;
   }
 
   .more-toggle {
     all: unset;
-    color: hsl(0 0% 70%);
+    color: var(--dp-text-soft);
     font-size: 11px;
     padding: 6px 8px;
     border-radius: 4px;
@@ -257,8 +311,8 @@ export const TextToolbarStyles = `
   }
 
   .more-toggle:hover {
-    background: hsl(0 0% 22%);
-    color: hsl(0 0% 95%);
+    background: var(--dp-control-hover-bg);
+    color: var(--dp-text-strong);
   }
 
   /* ---- row 2 sliders ---- */
@@ -270,7 +324,7 @@ export const TextToolbarStyles = `
   }
 
   .slider-label {
-    color: hsl(0 0% 65%);
+    color: var(--dp-text-soft);
     font-size: 11px;
     flex: none;
   }

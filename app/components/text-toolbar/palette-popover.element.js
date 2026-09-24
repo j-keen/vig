@@ -11,6 +11,7 @@
 
 import { TinyColor } from '@ctrl/tinycolor'
 import { collectPageColors } from '../../utilities/palette'
+import { Settings } from '../../features/settings'
 import { PalettePopoverStyles } from './palette-popover.styles'
 
 function isUndoRedoCombo(e) {
@@ -80,10 +81,13 @@ export class PalettePopover extends HTMLElement {
 
     const eyedropperBtn = this.$shadow.querySelector('.eyedropper')
     eyedropperBtn.addEventListener('click', () => this._pickWithEyedropper())
+
+    this._unregisterTheme = Settings.registerPanel(this)
   }
 
   disconnectedCallback() {
     document.removeEventListener('mousedown', this._boundOutsideClick, true)
+    if (this._unregisterTheme) { this._unregisterTheme(); this._unregisterTheme = null }
   }
 
   render() {

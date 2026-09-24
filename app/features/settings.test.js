@@ -1,0 +1,162 @@
+import test from 'ava'
+import puppeteer from 'puppeteer'
+
+// E2E: 전역 설정(테마·투명도·패널 위치), 툴바 정리, 선택 유지(노드 교체 후 재선택)
+
+const PORT = Number(process.env.E2E_PORT || 3300)
+
+const setupPptrTab = async t => {
+  t.context.browser = await puppeteer.launch({
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
+  })
+  t.context.page = await t.context.browser.newPage()
+  await t.context.page.setViewport({ width: 1200, height: 800 })
+  await t.context.page.goto(`http://localhost:${PORT}`)
+  await t.context.page.evaluateHandle(`document.body.setAttribute('testing', true)`)
+  await t.context.page.waitForSelector('vis-bug', { timeout: 10000 })
+  await t.context.page.evaluate(() => { try { localStorage.removeItem('designpoke.settings') } catch (e) {} })
+}
+
+const teardownPptrTab = async ({ context: { page, browser } }) => {
+  if (page) await page.close()
+  if (browser) await browser.close()
+}
+
+test.beforeEach(async t => { await setupPptrTab(t) })
+test.afterEach.always(async t => { await teardownPptrTab(t) })
+
+test.serial('Toolbar shows 6 visible tools; margin/padding/font/hueshift are hidden but still reachable', async t => {
+  const { page } = t.context
+  const info = await page.evaluate(() => {
+    const vb = document.querySelector('vis-bug')
+    const lis = [...vb.$shadow.querySelectorAll('ol:first-of-type > li')]
+    return {
+      total: lis.length,
+      visible: lis.filter(li => !li.hasAttribute('hidden')).map(li => li.dataset.tool),
+      hidden: lis.filter(li => li.hasAttribute('hidden')).map(li => li.dataset.tool),
+      colorsHidden: vb.$shadow.querySelector('ol[colors]').hasAttribute('hidden'),
+    }
+  })
+  t.is(info.total, 10)
+  t.deepEqual(info.visible, ['position', 'text', 'align', 'move', 'guides', 'aicopy'])
+  t.deepEqual(info.hidden, ['margin', 'padding', 'font', 'hueshift'])
+  t.true(info.colorsHidden)
+
+  await page.keyboard.press('m')
+  await page.waitForTimeout(100)
+  t.is(await page.evaluate(() => document.querySelector('vis-bug').activeTool), 'margin', 'hidden tool still works via hotkey')
+})
+
+test.serial('Settings: theme and opacity apply to the toolbar and registered panels; popover toggles', async t => {
+  const { page } = t.context
+  const out = await page.evaluate(async () => {
+    const vb = document.querySelector('vis-bug')
+    const S = window.DesignPokeSettings
+    await S.load()
+    S.set({ theme: 'light', opacity: 0.6 })
+    await new Promise(r => setTimeout(r, 50))
+    const res = {
+      scheme: vb.getAttribute('color-scheme'),
+      opacity: vb.style.opacity,
+      radioLight: vb.$shadow.querySelector('input[name="theme"][value="light"]').checked,
+      rangeVal: vb.$shadow.querySelector('input[name="opacity"]').value,
+      stored: JSON.parse(localStorage.getItem('designpoke.settings')),
+    }
+    vb.$shadow.querySelector('[data-settings-toggle]').click()
+    res.popoverOpen = !vb.$shadow.querySelector('[settings-popover]').hasAttribute('hidden')
+    vb.$shadow.querySelector('[data-settings-toggle]').click()
+    res.popoverClosed = vb.$shadow.querySelector('[settings-popover]').hasAttribute('hidden')
+    S.set({ theme: 'dark', opacity: 1 })
+    return res
+  })
+  t.is(out.scheme, 'light')
+  t.is(out.opacity, '0.6')
+  t.true(out.radioLight)
+  t.is(out.rangeVal, '60')
+  t.is(out.stored.theme, 'light')
+  t.true(out.popoverOpen)
+  t.true(out.popoverClosed)
+})
+
+test.serial('Toolbar drag position is remembered', async t => {
+  const { page } = t.context
+  const before = await page.evaluate(() => {
+    const vb = document.querySelector('vis-bug')
+    // 툴 버튼을 잡고 끌면 툴바가 이동한다 (5px 이상 움직이면 클릭이 아닌 드래그로 처리)
+    const li = vb.$shadow.querySelector('li[data-tool="guides"]')
+    const r = li.getBoundingClientRect()
+    const host = vb.getBoundingClientRect()
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2, left: host.left, top: host.top }
+  })
+  await page.mouse.move(before.x, before.y)
+  await page.mouse.down()
+  await page.mouse.move(before.x + 80, before.y + 60, { steps: 6 })
+  await page.mouse.up()
+  await page.waitForTimeout(200)
+  const after = await page.evaluate(() => {
+    const host = document.querySelector('vis-bug').getBoundingClientRect()
+    return { left: host.left, top: host.top, saved: window.DesignPokeSettings.get().positions.toolbar }
+  })
+  t.true(after.left > before.left + 40, `toolbar should move right (${before.left} → ${after.left})`)
+  t.truthy(after.saved, 'position should be saved in settings')
+  t.true(Math.abs(after.saved.left - after.left) <= 2)
+})
+
+test.serial('Selection survives a framework-style node replacement', async t => {
+  const { page } = t.context
+  const out = await page.evaluate(async () => {
+    const wrap = document.createElement('section')
+    wrap.id = 'rerender-wrap'
+    wrap.innerHTML = '<button id="rr-btn" class="cta">Buy</button>'
+    wrap.style.cssText = 'position:fixed;left:200px;top:500px;z-index:1;'
+    document.body.appendChild(wrap)
+    const vb = document.querySelector('vis-bug')
+    vb.selectorEngine.unselect_all({ silent: true })
+    vb.selectorEngine.select(document.getElementById('rr-btn'))
+    await new Promise(r => requestAnimationFrame(r))
+
+    // React 재렌더 흉내: 같은 자리의 노드를 새 노드로 교체 (data-* 없음)
+    const fresh = document.createElement('button')
+    fresh.id = 'rr-btn'
+    fresh.className = 'cta'
+    fresh.textContent = 'Buy now'
+    wrap.replaceChild(fresh, document.getElementById('rr-btn'))
+    await new Promise(r => setTimeout(r, 120))
+
+    return {
+      selectedCount: document.querySelectorAll('[data-selected]').length,
+      freshSelected: fresh.hasAttribute('data-selected'),
+      handles: document.querySelectorAll('visbug-handles').length,
+      engineHas: vb.selectorEngine.selection().includes(fresh),
+    }
+  })
+  t.is(out.selectedCount, 1)
+  t.true(out.freshSelected, 'the replacement node should be re-selected')
+  t.is(out.handles, 1)
+  t.true(out.engineHas)
+})
+
+test.serial('backgroundColor prop hint shows a color swatch label without stripes', async t => {
+  const { page } = t.context
+  const out = await page.evaluate(async () => {
+    const el = document.createElement('div')
+    el.id = 'bg-hint'
+    el.style.cssText = 'position:fixed;left:300px;top:300px;width:120px;height:60px;background:#ff8800;z-index:1;'
+    document.body.appendChild(el)
+    window.DesignPokePropHint.showPropHint(el, 'backgroundColor', { value: '#ff8800' })
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+    const host = document.querySelector('visbug-prop-hint')
+    const html = host.innerHTML
+    const chip = host.querySelector('span')
+    const res = {
+      hasStripes: /repeating-linear-gradient/.test(html),
+      chipBg: chip && getComputedStyle(chip).backgroundColor,
+      label: host.textContent.trim(),
+    }
+    window.DesignPokePropHint.hidePropHint()
+    return res
+  })
+  t.false(out.hasStripes)
+  t.is(out.chipBg, 'rgb(255, 136, 0)')
+  t.regex(out.label, /배경색/)
+})
