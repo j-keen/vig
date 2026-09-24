@@ -39,6 +39,7 @@ export function MetaTip(visbug) {
 
 const mouseMove = e => {
   const target = deepElementFromPoint(e.clientX, e.clientY)
+  if (!target) return
 
   if (isOffBounds(target) || target.nodeName === 'VISBUG-METATIP' || target.hasAttribute('data-metatip')) { // aka: mouse out
     if (state.active.tip) {

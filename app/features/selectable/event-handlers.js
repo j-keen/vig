@@ -80,6 +80,7 @@ export function createEventHandlers({
     const $target = deepElementFromPoint(e.clientX, e.clientY)
     const selected = getSelected()
 
+    if (!$target) return
     if (isOffBounds($target) && !selected.filter(el => el == $target).length)
       return
 
@@ -330,6 +331,11 @@ export function createEventHandlers({
     const $target = deepElementFromPoint(e.clientX, e.clientY)
     const tool = visbug.activeTool
     const selected = getSelected()
+
+    if (!$target) {
+      clearMeasurements()
+      return clearHover()
+    }
 
     if (isOffBounds($target) || $target.hasAttribute('data-selected') || $target.hasAttribute('draggable')) {
       clearMeasurements()

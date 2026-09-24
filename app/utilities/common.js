@@ -1,8 +1,10 @@
 import $ from 'blingblingjs'
 import { nodeKey } from './strings'
 
+// 좌표가 뷰포트 밖이면 elementFromPoint 가 null 을 돌려주므로 null 안전하게 처리
 export const deepElementFromPoint = (x, y) => {
   const el = document.elementFromPoint(x, y)
+  if (!el) return null
 
   const crawlShadows = node => {
     if (node.shadowRoot) {
@@ -79,6 +81,7 @@ export const htmlStringToDom = (htmlString = "") =>
     .body.firstChild
 
 export const isOffBounds = node => {
+  if (!node) return true
   // Shadow DOM 내부 요소 체크: Shadow Root의 host가 VisBug 요소인지 확인
   if (node.getRootNode) {
     const root = node.getRootNode()

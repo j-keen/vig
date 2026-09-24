@@ -160,3 +160,25 @@ test.serial('backgroundColor prop hint shows a color swatch label without stripe
   t.is(out.chipBg, 'rgb(255, 136, 0)')
   t.regex(out.label, /배경색/)
 })
+
+test.serial('Pointer events outside the viewport do not throw (elementFromPoint null)', async t => {
+  const { page } = t.context
+  const errors = []
+  page.on('pageerror', err => errors.push(String(err && err.message || err)))
+
+  await page.evaluate(() => {
+    const fire = (type, x, y) => document.body.dispatchEvent(new MouseEvent(type, { bubbles: true, clientX: x, clientY: y }))
+    // 뷰포트 밖 좌표: elementFromPoint 가 null 을 돌려주는 상황
+    fire('mousemove', -50, -50)
+    fire('mousemove', 99999, 99999)
+    fire('click', -10, -10)
+    fire('dblclick', -10, -10)
+    // 거리 측정 도구에서도 동일
+    document.querySelector('vis-bug').toolSelected('guides')
+    fire('mousemove', -50, 20)
+    document.querySelector('vis-bug').toolSelected('position')
+  })
+  await page.waitForTimeout(150)
+
+  t.deepEqual(errors, [], `no page errors expected, got: ${errors.join(' | ')}`)
+})
