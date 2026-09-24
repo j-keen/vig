@@ -182,3 +182,40 @@ test.serial('Pointer events outside the viewport do not throw (elementFromPoint 
 
   t.deepEqual(errors, [], `no page errors expected, got: ${errors.join(' | ')}`)
 })
+
+test.serial('Hovering slotted content inside an open shadow host does not throw (shadowRoot.elementFromPoint null)', async t => {
+  const { page } = t.context
+  const errors = []
+  page.on('pageerror', err => errors.push(String(err && err.message || err)))
+
+  const out = await page.evaluate(async () => {
+    // Orca UI 같은 웹 컴포넌트 페이지 재현: 호스트의 섀도 트리에 <slot>, 라이트 DOM 자식이 슬롯에 꽂힘.
+    // Chrome 은 이 지점에서 host.shadowRoot.elementFromPoint() 에 null 을 돌려준다.
+    const host = document.createElement('x-card')
+    host.style.cssText = 'position:fixed;left:400px;top:400px;width:200px;height:100px;z-index:1;display:block;'
+    host.attachShadow({ mode: 'open' }).innerHTML = '<div style="padding:10px;background:#eee"><slot></slot></div>'
+    host.innerHTML = '<button id="slotted-btn" style="width:120px;height:40px">Slotted</button>'
+    document.body.appendChild(host)
+    await new Promise(r => requestAnimationFrame(r))
+    const r = document.getElementById('slotted-btn').getBoundingClientRect()
+    const x = r.left + r.width / 2, y = r.top + r.height / 2
+    const shadowHit = host.shadowRoot.elementFromPoint(x, y)
+    // 최신 Chrome 은 슬롯 내용 위에서 null 을 돌려주고, 테스트용 Chrome(93) 은 호스트를 돌려준다.
+    // 버전과 무관하게 null 경로를 확실히 태우기 위해 강제로 null 을 돌려주게 한다.
+    const origSREFP = ShadowRoot.prototype.elementFromPoint
+    ShadowRoot.prototype.elementFromPoint = function () { return null }
+    const fire = type => document.body.dispatchEvent(new MouseEvent(type, { bubbles: true, clientX: x, clientY: y }))
+    fire('mousemove')
+    fire('click')
+    document.querySelector('vis-bug').toolSelected('guides')
+    fire('mousemove')
+    document.querySelector('vis-bug').toolSelected('position')
+    ShadowRoot.prototype.elementFromPoint = origSREFP
+    return { shadowHitIsNull: shadowHit === null, selected: document.querySelectorAll('[data-selected]').length }
+  })
+  await page.waitForTimeout(150)
+
+  t.deepEqual(errors, [], `no page errors expected, got: ${errors.join(' | ')}`)
+  t.true(out.selected >= 1, 'clicking slotted content should still select something')
+  t.log('shadowRoot.elementFromPoint returned null:', out.shadowHitIsNull)
+})

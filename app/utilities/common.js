@@ -10,6 +10,9 @@ export const deepElementFromPoint = (x, y) => {
     if (node.shadowRoot) {
       const potential = node.shadowRoot.elementFromPoint(x, y)
 
+      // Chrome: 그 지점의 실제 요소가 슬롯에 꽂힌 라이트 DOM 자식(섀도 트리 밖)이면 null 을 돌려준다.
+      // 이때는 호스트 자체를 결과로 쓴다. (Orca UI 같은 웹 컴포넌트 기반 페이지에서 발생)
+      if (!potential)                 return node
       if (potential == node)          return node
       else if (potential.shadowRoot)  return crawlShadows(potential)
       else                            return potential

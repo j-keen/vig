@@ -24,6 +24,7 @@
 - 프레임워크가 요소를 다시 그려도 선택이 풀리지 않도록 같은 자리의 새 노드를 다시 선택합니다.
 - 배경색 힌트의 파란 사선 무늬를 없애고 색 견본 라벨로 바꿨습니다.
 - 마우스가 창 가장자리·스크롤바 밖으로 나갈 때 콘솔에 `Cannot read properties of null (reading 'shadowRoot')` 오류가 나던 문제를 고쳤습니다.
+- 웹 컴포넌트(open shadow DOM) 위에서 `shadowRoot.elementFromPoint`가 null을 돌려줄 때도 같은 오류가 나지 않도록 요소 탐색 재귀에 가드를 추가했습니다.
 
 ## 1.1.0 (미배포)
 
