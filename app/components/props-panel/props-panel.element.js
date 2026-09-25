@@ -1,10 +1,12 @@
 // Figma 스타일 속성 패널
 // Properties Panel - shows/edits computed style values of the current selection
+// 이 컴포넌트는 독립 패널이 아니라 우측 사이드 패널(app/components/side-panel)의
+// light-DOM 자식으로 슬롯되는 콘텐츠다. 자체 위치/드래그/popover 를 갖지 않는다.
 
 import { ChangeTracker } from '../../features/change-tracker'
 import { showPropHint, hidePropHint } from '../../features/prop-hint'
 import { Settings } from '../../features/settings'
-import { makeMovable } from '../../utilities/panel-dock'
+import { moveElement } from '../../features/move'
 import { PropsPanelStyles } from './props-panel.styles'
 
 function computeSizeMax(el, prop) {
@@ -34,7 +36,7 @@ function readLineHeight(computed) {
   return Number.isNaN(n) ? 1.4 : n
 }
 
-// 스크럽/스테퍼/슬라이더로 조작 가능한 숫자 필드 목록
+// 스크럽/슬라이더로 조작 가능한 숫자 필드 목록 (한 줄: 라벨 + 게이지바 + 입력)
 const NUM_FIELDS = [
   { section: 'position', prop: 'left', label: 'X', unit: 'px', min: -2000, max: 2000, step: 1 },
   { section: 'position', prop: 'top', label: 'Y', unit: 'px', min: -2000, max: 2000, step: 1 },
@@ -55,7 +57,8 @@ const NUM_FIELDS = [
   { section: 'font', prop: 'fontSize', label: '크기', unit: 'px', min: 8, max: 96, step: 1 },
   { section: 'font', prop: 'lineHeight', label: '줄간격', unit: '', min: 0.8, max: 3, step: 0.1,
     read: computed => readLineHeight(computed) },
-  { section: 'font', prop: 'letterSpacing', label: '자간', unit: 'px', min: -2, max: 10, step: 0.5 },
+  { section: 'font', prop: 'letterSpacing', label: '자간', unit: 'px', min: -2, max: 10, step: 0.5, read: cs => cs.letterSpacing === 'normal' ? 0 : (parseFloat(cs.letterSpacing) || 0) },
+  { section: 'flex', prop: 'gap', label: '간격', unit: 'px', min: 0, max: 200, step: 1 },
 ]
 
 const COLOR_FIELDS = [
@@ -65,6 +68,25 @@ const COLOR_FIELDS = [
 ]
 
 const FONT_WEIGHTS = ['300', '400', '500', '600', '700']
+
+// 정렬(Flex) 섹션 버튼들 - { prop, value, text }
+const FLEX_DIRECTION_BUTTONS = [
+  { value: 'row', text: '가로' },
+  { value: 'column', text: '세로' },
+]
+const FLEX_JUSTIFY_BUTTONS = [
+  { value: 'flex-start', text: '시작' },
+  { value: 'center', text: '가운데' },
+  { value: 'flex-end', text: '끝' },
+  { value: 'space-between', text: '사이' },
+  { value: 'space-evenly', text: '균등' },
+]
+const FLEX_ALIGN_BUTTONS = [
+  { value: 'flex-start', text: '시작' },
+  { value: 'center', text: '가운데' },
+  { value: 'flex-end', text: '끝' },
+  { value: 'stretch', text: '늘이기' },
+]
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n))
 
@@ -103,24 +125,25 @@ function normalizeHex(value) {
     : value
 }
 
+// 한 줄 게이지 행: [라벨][게이지바][입력+단위]
 function numRowHTML(field) {
   const { prop, label, unit } = field
   return `
     <div class="num-row" data-row-prop="${prop}">
-      <div class="num-row-top">
-        <label class="num-label" data-prop="${prop}" title="드래그: 값 변경 (Shift ×10)">${label}</label>
-        <div class="stepper">
-          <button type="button" class="step-btn" data-dir="1" data-prop="${prop}" title="증가 (Shift: ×10)">▲</button>
-          <button type="button" class="step-btn" data-dir="-1" data-prop="${prop}" title="감소 (Shift: ×10)">▼</button>
-        </div>
-        <div class="input-wrap">
-          <input class="num-input" data-prop="${prop}" type="text" inputmode="decimal" autocomplete="off">
-          ${unit ? `<span class="unit">${unit}</span>` : ''}
-        </div>
-      </div>
+      <label class="num-label" data-prop="${prop}" title="드래그: 값 변경 (Shift ×10)">${label}</label>
       <input type="range" class="range-input" data-prop="${prop}" min="${field.min ?? 0}" max="${field.max ?? 100}" step="${field.step ?? 1}">
+      <div class="input-wrap">
+        <input class="num-input" data-prop="${prop}" type="text" inputmode="decimal" autocomplete="off">
+        ${unit ? `<span class="unit">${unit}</span>` : ''}
+      </div>
     </div>
   `
+}
+
+function flexButtonsHTML(prop, buttons) {
+  return buttons.map(b =>
+    `<button type="button" class="flex-btn" data-flex-prop="${prop}" data-flex-value="${b.value}">${b.text}</button>`
+  ).join('')
 }
 
 export class PropsPanel extends HTMLElement {
@@ -138,7 +161,6 @@ export class PropsPanel extends HTMLElement {
     this._session = null // 진행 중인 실시간 편집 제스처 { prop, startValues: Map<el,string> }
     this._hideHintTimer = null
     this._unregisterTheme = null
-    this._undock = null
   }
 
   set visbug(vb) {
@@ -157,16 +179,9 @@ export class PropsPanel extends HTMLElement {
   connectedCallback() {
     this.ensureRendered()
 
-    this.setAttribute('popover', 'manual')
-    this.showPopover && this.showPopover()
-
     // 전역 설정(테마/불투명도)을 등록하면 data-theme 속성과 style.opacity 가
-    // Settings 에 의해 자동으로 적용·갱신된다.
+    // Settings 에 의해 자동으로 적용·갱신된다. (위치/드래그는 셸이 담당)
     this._unregisterTheme = Settings.registerPanel(this)
-
-    // 헤더를 손잡이로 자유 이동 가능하게 만들고 위치를 기억한다.
-    const header = this.$shadow.querySelector('.header')
-    this._undock = makeMovable({ host: this, handle: header, key: 'props' })
   }
 
   disconnectedCallback() {
@@ -176,8 +191,6 @@ export class PropsPanel extends HTMLElement {
       this._visbug.selectorEngine.removeSelectedCallback(this._onSelectedUpdate)
     }
     this._unregisterTheme && this._unregisterTheme()
-    this._undock && this._undock()
-    this.hidePopover && this.hidePopover()
   }
 
   ensureRendered() {
@@ -202,14 +215,12 @@ export class PropsPanel extends HTMLElement {
     const padding = NUM_FIELDS.filter(f => f.section === 'padding').map(numRowHTML).join('')
     const radius = NUM_FIELDS.filter(f => f.section === 'radius').map(numRowHTML).join('')
     const fontNums = NUM_FIELDS.filter(f => f.section === 'font').map(numRowHTML).join('')
+    const gapRow = NUM_FIELDS.filter(f => f.section === 'flex').map(numRowHTML).join('')
 
     return `
-      <div class="panel" hidden>
-        <div class="header" title="드래그해서 이동">
-          <span class="grip-icon" aria-hidden="true">⋮⋮</span>
-          <span class="label">요소 없음</span>
-        </div>
-        <div class="body">
+      <div class="panel">
+        <div class="empty-hint">요소를 클릭하면 속성이 여기 표시됩니다</div>
+        <div class="body" hidden>
           <section class="section-position">
             <div class="section-title">위치</div>
             <div class="hint" hidden>이동하면 활성화</div>
@@ -223,12 +234,12 @@ export class PropsPanel extends HTMLElement {
 
           <section>
             <div class="section-title">바깥 여백</div>
-            <div class="row">${margin}</div>
+            <div class="row tight">${margin}</div>
           </section>
 
           <section>
             <div class="section-title">안쪽 여백</div>
-            <div class="row">${padding}</div>
+            <div class="row tight">${padding}</div>
           </section>
 
           <section>
@@ -238,21 +249,22 @@ export class PropsPanel extends HTMLElement {
 
           <section>
             <div class="section-title">투명도</div>
-            <div class="opacity-row" data-row-prop="opacity">
-              <input type="range" class="opacity-input" min="0" max="100" step="1" value="100">
-              <span class="opacity-value">100%</span>
+            <div class="num-row" data-row-prop="opacity">
+              <span class="num-label" aria-hidden="true">비율</span>
+              <input type="range" class="opacity-input range-input" min="0" max="100" step="1" value="100">
+              <div class="input-wrap">
+                <span class="opacity-value">100</span><span class="unit">%</span>
+              </div>
             </div>
           </section>
 
           <section>
             <div class="section-title">글꼴</div>
             <div class="row">${fontNums}</div>
-            <div class="row field-wrap" data-row-prop="fontWeight" style="margin-top:6px;">
-              <div class="field" style="min-width: 100%;">
-                <select class="select-input font-weight-input" title="글자 굵기">
-                  ${FONT_WEIGHTS.map(w => `<option value="${w}">${w}</option>`).join('')}
-                </select>
-              </div>
+            <div class="select-row" data-row-prop="fontWeight">
+              <select class="select-input font-weight-input" title="글자 굵기">
+                ${FONT_WEIGHTS.map(w => `<option value="${w}">${w}</option>`).join('')}
+              </select>
             </div>
           </section>
 
@@ -275,6 +287,32 @@ export class PropsPanel extends HTMLElement {
               </div>
             `).join('')}
           </section>
+
+          <section class="section-flex">
+            <div class="section-title">정렬 (Flex)</div>
+            <div class="hint flex-hint">선택한 요소가 컨테이너일 때 자식 배치</div>
+            <button type="button" class="flex-make-btn" data-flex-prop="display" data-flex-value="flex">flex로 만들기</button>
+            <div class="flex-controls" hidden>
+              <div class="flex-group-label">방향</div>
+              <div class="flex-btn-row">${flexButtonsHTML('flexDirection', FLEX_DIRECTION_BUTTONS)}</div>
+              <div class="flex-group-label">가로 정렬</div>
+              <div class="flex-btn-row">${flexButtonsHTML('justifyContent', FLEX_JUSTIFY_BUTTONS)}</div>
+              <div class="flex-group-label">세로 정렬</div>
+              <div class="flex-btn-row">${flexButtonsHTML('alignItems', FLEX_ALIGN_BUTTONS)}</div>
+              <div class="flex-group-label">간격</div>
+              <div class="row">${gapRow}</div>
+            </div>
+          </section>
+
+          <section class="section-order">
+            <div class="section-title">순서</div>
+            <div class="order-row">
+              <button type="button" class="order-btn" data-move-dir="left" title="이전 형제와 교체">◀</button>
+              <button type="button" class="order-btn" data-move-dir="right" title="다음 형제와 교체">▶</button>
+              <button type="button" class="order-btn" data-move-dir="up" title="부모 밖으로 이동">▲</button>
+              <button type="button" class="order-btn" data-move-dir="down" title="다음 형제 안으로 이동">▼</button>
+            </div>
+          </section>
         </div>
       </div>
     `
@@ -296,6 +334,8 @@ export class PropsPanel extends HTMLElement {
     this.setupFontWeight()
     this.setupAlign()
     COLOR_FIELDS.forEach(field => this.setupColor(field))
+    this.setupFlexSection()
+    this.setupOrder()
   }
 
   // ---- session: live preview (no ChangeTracker) + single commit per gesture ----
@@ -384,7 +424,7 @@ export class PropsPanel extends HTMLElement {
     row.addEventListener('focusout', hide)
   }
 
-  // ---- numeric px/unitless fields (typing / arrows / stepper / slider / scrub) ----
+  // ---- numeric px/unitless fields (typing / arrows / slider / scrub) ----
 
   setupNumField(field) {
     const { prop, unit = '' } = field
@@ -393,7 +433,6 @@ export class PropsPanel extends HTMLElement {
     const input = row.querySelector('.num-input')
     const slider = row.querySelector('.range-input')
     const label = row.querySelector('.num-label')
-    const stepButtons = Array.from(row.querySelectorAll('.step-btn'))
 
     const displayValue = () => (input.value !== '' ? `${input.value}${unit}` : '')
 
@@ -462,43 +501,6 @@ export class PropsPanel extends HTMLElement {
       slider.addEventListener('change', () => commit())
     }
 
-    stepButtons.forEach(btn => {
-      const dir = parseInt(btn.dataset.dir, 10)
-      let repeatTimeout = null
-      let repeatInterval = null
-
-      const doStep = shiftKey => {
-        const delta = dir * (shiftKey ? 10 : 1)
-        const cur = parseFloat(input.value) || 0
-        const next = cur + delta
-        syncInput(next)
-        preview(next)
-        syncSlider(next)
-      }
-
-      const onDown = e => {
-        if (this.isFieldDisabled(prop)) return
-        e.preventDefault()
-        doStep(e.shiftKey)
-
-        repeatTimeout = setTimeout(() => {
-          repeatInterval = setInterval(() => doStep(e.shiftKey), 40)
-        }, 250)
-
-        const stop = () => {
-          clearTimeout(repeatTimeout)
-          clearInterval(repeatInterval)
-          repeatTimeout = null
-          repeatInterval = null
-          document.removeEventListener('mouseup', stop)
-          commit()
-        }
-        document.addEventListener('mouseup', stop)
-      }
-
-      btn.addEventListener('mousedown', onDown)
-    })
-
     label.addEventListener('mousedown', e => {
       if (this.isFieldDisabled(prop) || this._selected.length === 0) return
       e.preventDefault()
@@ -541,7 +543,7 @@ export class PropsPanel extends HTMLElement {
     input.addEventListener('input', () => {
       const pct = clamp(parseInt(input.value, 10) || 0, 0, 100)
       this.previewStyle('opacity', String(pct / 100))
-      if (valueEl) valueEl.textContent = `${pct}%`
+      if (valueEl) valueEl.textContent = `${pct}`
       this.showHintFor('opacity', `${pct}%`)
     })
 
@@ -659,6 +661,64 @@ export class PropsPanel extends HTMLElement {
     this.scheduleHideHint()
   }
 
+  // ---- 정렬 (Flex) ----
+
+  setupFlexSection() {
+    const section = this.$shadow.querySelector('.section-flex')
+    if (!section) return
+    const buttons = Array.from(section.querySelectorAll('.flex-make-btn, .flex-btn'))
+
+    buttons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (this._selected.length === 0) return
+        const prop = btn.dataset.flexProp
+        const value = btn.dataset.flexValue
+        this.previewStyle(prop, value)
+        this.showHintFor(prop, value)
+        this.commitSession()
+        this.scheduleHideHint()
+        this.refresh()
+      })
+    })
+  }
+
+  updateFlexSection(computed) {
+    const section = this.$shadow.querySelector('.section-flex')
+    if (!section) return
+    const isFlex = computed.display === 'flex' || computed.display === 'inline-flex'
+    const makeBtn = section.querySelector('.flex-make-btn')
+    const controls = section.querySelector('.flex-controls')
+    if (makeBtn) makeBtn.hidden = isFlex
+    if (controls) controls.hidden = !isFlex
+    if (!isFlex) return
+
+    this.setActiveFlexButtons(section, 'flexDirection', computed.flexDirection)
+    this.setActiveFlexButtons(section, 'justifyContent', computed.justifyContent)
+    this.setActiveFlexButtons(section, 'alignItems', computed.alignItems)
+  }
+
+  setActiveFlexButtons(section, prop, value) {
+    section.querySelectorAll(`.flex-btn[data-flex-prop="${prop}"]`).forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.flexValue === value)
+    })
+  }
+
+  // ---- 순서 (DOM 이동) ----
+
+  setupOrder() {
+    const buttons = Array.from(this.$shadow.querySelectorAll('.order-btn'))
+    buttons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const el = this._selected[0]
+        if (!el || !this._visbug || !this._visbug.selectorEngine) return
+        const dir = btn.dataset.moveDir
+        moveElement(el, dir)
+        this._visbug.selectorEngine.unselect_all({ silent: true })
+        this._visbug.selectorEngine.select(el)
+      })
+    })
+  }
+
   // ---- selection lifecycle ----
 
   handleSelectionChange(selected) {
@@ -673,24 +733,8 @@ export class PropsPanel extends HTMLElement {
     }
 
     this.showPanel()
-    this.updateHeader()
     this.refresh()
     this.observeSelection()
-  }
-
-  updateHeader() {
-    const labelEl = this.$shadow.querySelector('.header .label')
-    if (!labelEl) return
-
-    if (this._selected.length > 1) {
-      labelEl.textContent = `${this._selected.length}개 선택`
-      return
-    }
-
-    const el = this._selected[0]
-    const tag = el.tagName.toLowerCase()
-    const firstClass = el.classList && el.classList.length ? `.${el.classList[0]}` : ''
-    labelEl.textContent = `${tag}${firstClass}`
   }
 
   updateNumDisplay(field, el, computed, { skipFocused = false, active = null } = {}) {
@@ -723,7 +767,6 @@ export class PropsPanel extends HTMLElement {
     input.disabled = disabled
     if (slider) slider.disabled = disabled
     if (label) label.classList.toggle('disabled', disabled)
-    row.querySelectorAll('.step-btn').forEach(btn => { btn.disabled = disabled })
   }
 
   updateOpacityDisplay(el, computed, { skipFocused = false, active = null } = {}) {
@@ -732,7 +775,7 @@ export class PropsPanel extends HTMLElement {
     if (!input || (skipFocused && input === active)) return
     const pct = clamp(Math.round((parseFloat(computed.opacity) || 0) * 100), 0, 100)
     input.value = pct
-    if (valueEl) valueEl.textContent = `${pct}%`
+    if (valueEl) valueEl.textContent = `${pct}`
   }
 
   updateFontWeightDisplay(computed, { skipFocused = false, active = null } = {}) {
@@ -768,6 +811,7 @@ export class PropsPanel extends HTMLElement {
     this.updateFontWeightDisplay(computed, { skipFocused: true, active })
     this.setActiveAlign(computed.textAlign)
     COLOR_FIELDS.forEach(c => this.updateColorDisplay(c.prop, computed, { skipFocused: true, active }))
+    this.updateFlexSection(computed)
   }
 
   // Escape로 세션을 취소한 뒤 해당 필드 하나만 강제로 실제 값으로 되돌린다 (포커스 여부 무시)
@@ -782,6 +826,9 @@ export class PropsPanel extends HTMLElement {
     if (prop === 'fontWeight') { this.updateFontWeightDisplay(computed); return }
     if (prop === 'textAlign') { this.setActiveAlign(computed.textAlign); return }
     if (COLOR_FIELDS.some(c => c.prop === prop)) { this.updateColorDisplay(prop, computed); return }
+    if (['display', 'flexDirection', 'justifyContent', 'alignItems'].includes(prop)) {
+      this.updateFlexSection(computed)
+    }
   }
 
   updatePositionHint() {
@@ -804,13 +851,17 @@ export class PropsPanel extends HTMLElement {
   }
 
   showPanel() {
-    const panel = this.$shadow.querySelector('.panel')
-    if (panel) panel.hidden = false
+    const emptyHint = this.$shadow.querySelector('.empty-hint')
+    const body = this.$shadow.querySelector('.body')
+    if (emptyHint) emptyHint.hidden = true
+    if (body) body.hidden = false
   }
 
   hidePanel() {
-    const panel = this.$shadow.querySelector('.panel')
-    if (panel) panel.hidden = true
+    const emptyHint = this.$shadow.querySelector('.empty-hint')
+    const body = this.$shadow.querySelector('.body')
+    if (emptyHint) emptyHint.hidden = false
+    if (body) body.hidden = true
   }
 }
 

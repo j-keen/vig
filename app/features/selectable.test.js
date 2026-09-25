@@ -88,12 +88,10 @@ const mountDragFixture = async (page, html) => {
 
 const dispatchMouseGesture = async (page, { selector, dx = 0, dy = 0, surface } = {}) => {
   await page.evaluate(({ selector, dx, dy, surface }) => {
-    const visbug = document.querySelector('vis-bug')
     let target
-    if (surface === 'tool') {
-      target = visbug.$shadow.querySelector('li[data-tool]')
-    } else if (surface === 'toolbar') {
-      target = visbug.$shadow.querySelector('ol')
+    if (surface === 'panel-header') {
+      // 예전엔 왼쪽 툴바였지만, 이제 유일한 "DesignPoke UI" 표면은 오른쪽 사이드 패널이다.
+      target = document.querySelector('visbug-side-panel').$shadow.querySelector('.header')
     } else {
       target = document.querySelector(selector)
     }
@@ -893,16 +891,17 @@ test('Hover: moving to off-bounds element clears hover', async t => {
     await page.waitForTimeout(300)
   }
 
-  // Move to the vis-bug toolbar (off-bounds)
-  const visBugRect = await page.evaluate(() => {
-    const vb = document.querySelector('vis-bug')
-    if (!vb) return null
-    const r = vb.getBoundingClientRect()
+  // Move to the DesignPoke side panel (off-bounds) - vis-bug itself has no
+  // visible area anymore, so the side panel shell is the off-bounds surface now.
+  const sidePanelRect = await page.evaluate(() => {
+    const shell = document.querySelector('visbug-side-panel')
+    if (!shell) return null
+    const r = shell.getBoundingClientRect()
     return { x: r.x + r.width / 2, y: r.y + r.height / 2 }
   })
 
-  if (visBugRect) {
-    await page.mouse.move(visBugRect.x, visBugRect.y)
+  if (sidePanelRect) {
+    await page.mouse.move(sidePanelRect.x, sidePanelRect.y)
     await page.waitForTimeout(300)
   }
 
@@ -911,6 +910,53 @@ test('Hover: moving to off-bounds element clears hover', async t => {
   })
 
   t.true(hoverCount === 0, 'Hover should be cleared when moving to off-bounds area')
+})
+
+test('Alt+hover: shows distance measurements outside the guides tool, and releasing Alt clears them', async t => {
+  const { page } = t.context
+  await changeMode({ tool: 'position', page })
+
+  await selectVia(page, '[intro] h1')
+  await page.waitForTimeout(200)
+
+  const rect = await page.evaluate(() => {
+    const el = document.querySelector('[intro] h2')
+    const r = el.getBoundingClientRect()
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 }
+  })
+
+  await page.keyboard.down('Alt')
+  await page.mouse.move(rect.x, rect.y)
+  await page.waitForTimeout(200)
+
+  const whileHeld = await page.evaluate(() => document.querySelectorAll('visbug-distance').length)
+  t.true(whileHeld > 0, 'Alt+hover over an unselected element should create visbug-distance measurements even though the active tool is not guides')
+
+  await page.keyboard.up('Alt')
+  await page.waitForTimeout(200)
+
+  const afterRelease = await page.evaluate(() => document.querySelectorAll('visbug-distance').length)
+  t.is(afterRelease, 0, 'releasing Alt should clear the measurements')
+})
+
+test('Alt+hover does not break the guides tool itself (g still measures without Alt)', async t => {
+  const { page } = t.context
+  await changeMode({ tool: 'guides', page })
+
+  await selectVia(page, '[intro] h1')
+  await page.waitForTimeout(200)
+
+  const rect = await page.evaluate(() => {
+    const el = document.querySelector('[intro] h2')
+    const r = el.getBoundingClientRect()
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 }
+  })
+
+  await page.mouse.move(rect.x, rect.y)
+  await page.waitForTimeout(200)
+
+  const count = await page.evaluate(() => document.querySelectorAll('visbug-distance').length)
+  t.true(count > 0, 'guides tool should keep measuring on hover without Alt')
 })
 
 // ===========================================================================
@@ -1253,14 +1299,14 @@ test('Drag: 30px drag records left/top for only that element', async t => {
   t.true('left' in result[0].changes || 'top' in result[0].changes, 'left/top change should be recorded')
 })
 
-test('Drag: toolbar click and toolbar drag do not track VIS-BUG or push undo', async t => {
+test('Drag: side panel header click and drag do not track VIS-BUG/VISBUG-SIDE-PANEL or push undo', async t => {
   const { page } = t.context
   await changeMode({ tool: 'guides', page })
   await page.evaluate(() => window.ChangeTracker.clearAll())
 
-  await dispatchMouseGesture(page, { surface: 'tool', dx: 0, dy: 0 })
+  await dispatchMouseGesture(page, { surface: 'panel-header', dx: 0, dy: 0 })
   await page.waitForTimeout(50)
-  await dispatchMouseGesture(page, { surface: 'toolbar', dx: 30, dy: 10 })
+  await dispatchMouseGesture(page, { surface: 'panel-header', dx: 30, dy: 10 })
   await page.waitForTimeout(100)
 
   const result = await page.evaluate(() => {
@@ -1271,8 +1317,9 @@ test('Drag: toolbar click and toolbar drag do not track VIS-BUG or push undo', a
     }
   })
 
-  t.false(result.tags.includes('VIS-BUG'), 'Toolbar must not appear in getAllChanges')
-  t.is(result.undo, null, 'undo() should be null after toolbar click/drag')
+  t.false(result.tags.includes('VIS-BUG'), 'vis-bug must not appear in getAllChanges')
+  t.false(result.tags.includes('VISBUG-SIDE-PANEL'), 'the side panel shell must not appear in getAllChanges')
+  t.is(result.undo, null, 'undo() should be null after clicking/dragging the panel header')
 })
 
 test('Drag: unselected element does not move (no leaked listeners)', async t => {

@@ -54,60 +54,51 @@ test.serial('Settings opacity:0.5 is applied to the history host style.opacity',
   await page.evaluate(() => window.DesignPokeSettings.set({ opacity: 1 }))
 })
 
-test.serial('Dragging the history panel header 120px down moves the panel and persists positions.history', async t => {
+test.serial('History panel is embedded (no drag handle, no minimize/close buttons) inside the side panel shell', async t => {
   const { page } = t.context
 
-  const before = await page.evaluate(() => {
+  const info = await page.evaluate(() => {
+    const shell = document.querySelector('visbug-side-panel')
     const host = document.querySelector('visbug-history')
-    const r = host.getBoundingClientRect()
-    // Grab the drag-grip specifically (not the header's overall center, which can
-    // overlap the button row) - it is a plain <span>, never an interactive element.
-    const grip = host.$shadow.querySelector('.drag-grip')
-    const gr = grip.getBoundingClientRect()
-    return { left: r.left, top: r.top, headerX: gr.left + gr.width / 2, headerY: gr.top + gr.height / 2 }
-  })
-
-  await page.mouse.move(before.headerX, before.headerY)
-  await page.mouse.down()
-  await page.mouse.move(before.headerX, before.headerY + 120, { steps: 10 })
-  await page.mouse.up()
-  await page.waitForTimeout(150)
-
-  const after = await page.evaluate(() => {
-    const host = document.querySelector('visbug-history')
-    const r = host.getBoundingClientRect()
-    return { left: r.left, top: r.top }
-  })
-
-  t.true(Math.abs((after.top - before.top) - 120) < 5,
-    `top should have increased by ~120px (actual delta ${after.top - before.top})`)
-
-  const savedPosition = await page.evaluate(() => window.DesignPokeSettings.get().positions.history)
-  t.truthy(savedPosition, 'dragging should persist a saved position for the history panel')
-  t.true(Math.abs(savedPosition.top - after.top) < 5, 'saved position should match the dragged-to location')
-})
-
-test.serial('Header buttons keep working after dock/drag wiring (compare button does not start a drag)', async t => {
-  const { page } = t.context
-
-  const result = await page.evaluate(() => {
-    const host = document.querySelector('visbug-history')
-    const hostRect = host.getBoundingClientRect()
-    const btn = host.$shadow.querySelector('.btn-compare')
-    const rect = btn.getBoundingClientRect()
     return {
-      beforeTop: hostRect.top,
-      btnX: rect.left + rect.width / 2,
-      btnY: rect.top + rect.height / 2,
+      insideShell: shell.contains(host),
+      slot: host.getAttribute('slot'),
+      hasPopoverAttr: host.hasAttribute('popover'),
+      dragGrip: host.$shadow.querySelectorAll('.drag-grip').length,
+      minimizeBtn: host.$shadow.querySelectorAll('.btn-minimize').length,
+      closeBtn: host.$shadow.querySelectorAll('.btn-close').length,
+      compareBtn: host.$shadow.querySelectorAll('.btn-compare').length,
+      helpBtn: host.$shadow.querySelectorAll('.btn-help').length,
     }
   })
 
-  await page.mouse.move(result.btnX, result.btnY)
-  await page.mouse.down()
-  await page.mouse.move(result.btnX + 50, result.btnY + 50, { steps: 5 })
-  await page.mouse.up()
-  await page.waitForTimeout(100)
+  t.true(info.insideShell, 'visbug-history should be a descendant of the side panel shell')
+  t.is(info.slot, 'history')
+  t.false(info.hasPopoverAttr, 'the embedded panel should not manage its own popover anymore')
+  t.is(info.dragGrip, 0, 'no drag handle - the shell owns layout now')
+  t.is(info.minimizeBtn, 0)
+  t.is(info.closeBtn, 0)
+  t.is(info.compareBtn, 1, '원본 보기 button should still be there')
+  t.is(info.helpBtn, 1, '도움말 button should still be there')
+})
 
-  const after = await page.evaluate(() => document.querySelector('visbug-history').getBoundingClientRect().top)
-  t.true(Math.abs(after - result.beforeTop) < 5, 'clicking/dragging from a header button must not move the panel')
+test.serial('Clicking the compare (⇄) button toggles compare mode without moving anything', async t => {
+  const { page } = t.context
+
+  // switch to the 이력 tab so the panel is actually visible/interactable
+  await page.evaluate(() => {
+    document.querySelector('visbug-side-panel').$shadow.querySelector('.tab[data-tab="history"]').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  })
+
+  const result = await page.evaluate(() => {
+    const host = document.querySelector('visbug-history')
+    const btn = host.$shadow.querySelector('.btn-compare')
+    btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    const active = btn.classList.contains('active')
+    btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+    document.dispatchEvent(new Event('mouseup'))
+    return { active }
+  })
+
+  t.true(result.active, 'holding the compare button down should activate 원본 보기')
 })

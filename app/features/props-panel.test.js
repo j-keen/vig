@@ -3,11 +3,18 @@ import puppeteer from 'puppeteer'
 
 const PORT = Number(process.env.E2E_PORT || 3300)
 
+// 패널 호스트(<visbug-props>)는 이제 셸에 슬롯되기 전까지 body 맨 위 정적 블록으로
+// 렌더링될 수 있으므로, 테스트 타겟은 겹치지 않도록 y=600 아래에 배치한다.
+const TARGET_TOP = 650
+
 const setupPptrTab = async t => {
   t.context.browser = await puppeteer.launch({
     args: ['--no-sandbox', '--disable-setuid-sandbox']
   })
   t.context.page = await t.context.browser.newPage()
+  // 타겟 요소를 패널과 겹치지 않도록 y=600 아래에 두므로, 뷰포트도 그만큼 키워
+  // page.mouse 좌표 기반 드래그(스크롤 없이 절대 좌표 사용)가 화면 밖으로 나가지 않게 한다.
+  await t.context.page.setViewport({ width: 1280, height: 900 })
   await t.context.page.goto(`http://localhost:${PORT}`)
   await t.context.page.evaluateHandle(`document.body.setAttribute('testing', true)`)
   await t.context.page.waitForSelector('vis-bug', { timeout: 10000 })
@@ -35,16 +42,21 @@ test.serial('Props panel: shows on select with correct width, edits width via En
     const el = document.createElement('div')
     el.id = 'props-target'
     el.textContent = 'Props target'
-    el.style.cssText = 'position:fixed;left:320px;top:260px;width:150px;height:60px;z-index:1;background:#eee;'
+    el.style.cssText = `position:fixed;left:320px;top:${650};width:150px;height:60px;z-index:1;background:#eee;`
     document.body.appendChild(el)
   })
 
-  // 아직 선택 전이므로 패널은 숨겨져 있어야 한다
+  // 아직 선택 전이므로 바디는 숨겨지고 빈 상태 힌트가 표시되어야 한다
   const beforeSelect = await page.evaluate(() => {
     const panel = document.querySelector('visbug-props')
-    return panel.$shadow.querySelector('.panel').hidden
+    const sh = panel.$shadow
+    return {
+      bodyHidden: sh.querySelector('.body').hidden,
+      hintHidden: sh.querySelector('.empty-hint').hidden,
+    }
   })
-  t.true(beforeSelect, 'panel should be hidden before any selection')
+  t.true(beforeSelect.bodyHidden, 'body should be hidden before any selection')
+  t.false(beforeSelect.hintHidden, 'empty-state hint should be visible before any selection')
 
   await page.evaluate(() => {
     const el = document.getElementById('props-target')
@@ -57,13 +69,15 @@ test.serial('Props panel: shows on select with correct width, edits width via En
     const sh = panel.$shadow
     const widthInput = sh.querySelector('.num-input[data-prop="width"]')
     return {
-      hidden: sh.querySelector('.panel').hidden,
+      bodyHidden: sh.querySelector('.body').hidden,
+      hintHidden: sh.querySelector('.empty-hint').hidden,
       width: widthInput.value,
       focused: sh.activeElement === widthInput,
     }
   })
   console.log('[props-panel e2e] after select', afterSelect)
-  t.false(afterSelect.hidden, 'panel should be visible once an element is selected')
+  t.false(afterSelect.bodyHidden, 'body should be visible once an element is selected')
+  t.true(afterSelect.hintHidden, 'empty-state hint should be hidden once an element is selected')
   t.is(afterSelect.width, '150', 'width input should reflect the computed width')
   t.false(afterSelect.focused, 'selection should not steal focus into the panel')
 
@@ -112,7 +126,7 @@ test.serial('Props panel: shows on select with correct width, edits width via En
   console.log('[props-panel e2e] after Ctrl+Z', afterUndo)
   t.is(afterUndo, '150px', 'Ctrl+Z should restore the original width')
 
-  // 선택 해제 시 패널이 다시 숨겨져야 한다
+  // 선택 해제 시 바디가 다시 숨겨지고 빈 상태 힌트가 보여야 한다
   await page.evaluate(() => {
     document.querySelector('vis-bug').selectorEngine.unselect_all()
   })
@@ -120,21 +134,21 @@ test.serial('Props panel: shows on select with correct width, edits width via En
 
   const afterUnselect = await page.evaluate(() => {
     const panel = document.querySelector('visbug-props')
-    return panel.$shadow.querySelector('.panel').hidden
+    return panel.$shadow.querySelector('.body').hidden
   })
-  t.true(afterUnselect, 'panel should hide again after unselect_all')
+  t.true(afterUnselect, 'body should hide again after unselect_all')
 })
 
 test.serial('Props panel: dragging the W slider live-updates width and commits exactly one undo entry on mouseup', async t => {
   const { page } = t.context
 
-  await page.evaluate(() => {
+  await page.evaluate(top => {
     window.ChangeTracker.clearAll()
     const el = document.createElement('div')
     el.id = 'props-target-slider'
-    el.style.cssText = 'position:fixed;left:50px;top:50px;width:150px;height:60px;z-index:1;background:#eee;'
+    el.style.cssText = `position:fixed;left:50px;top:${top}px;width:150px;height:60px;z-index:1;background:#eee;`
     document.body.appendChild(el)
-  })
+  }, TARGET_TOP)
 
   await page.evaluate(() => {
     const el = document.getElementById('props-target-slider')
@@ -144,9 +158,12 @@ test.serial('Props panel: dragging the W slider live-updates width and commits e
 
   const before = await page.evaluate(() => window.ChangeTracker.getUndoStackSnapshot().length)
 
+  // 패널이 이제 body 정상 흐름에 놓이는 정적 블록이라 페이지 맨 아래로 밀릴 수 있으므로
+  // page.mouse 의 절대 좌표 드래그가 화면 밖을 가리키지 않도록 먼저 뷰포트 안으로 스크롤한다.
   const sliderBox = await page.evaluate(() => {
     const panel = document.querySelector('visbug-props')
     const el = panel.$shadow.querySelector('.range-input[data-prop="width"]')
+    el.scrollIntoView({ block: 'center', inline: 'center' })
     const r = el.getBoundingClientRect()
     return { x: r.x, y: r.y, width: r.width, height: r.height }
   })
@@ -178,13 +195,13 @@ test.serial('Props panel: dragging the W slider live-updates width and commits e
 test.serial('Props panel: focusing the W input shows the prop hint overlay; blur clears it', async t => {
   const { page } = t.context
 
-  await page.evaluate(() => {
+  await page.evaluate(top => {
     window.ChangeTracker.clearAll()
     const el = document.createElement('div')
     el.id = 'props-target-hint'
-    el.style.cssText = 'position:fixed;left:50px;top:50px;width:150px;height:60px;z-index:1;background:#eee;'
+    el.style.cssText = `position:fixed;left:50px;top:${top}px;width:150px;height:60px;z-index:1;background:#eee;`
     document.body.appendChild(el)
-  })
+  }, TARGET_TOP)
 
   await page.evaluate(() => {
     const el = document.getElementById('props-target-hint')
@@ -220,76 +237,149 @@ test.serial('Props panel: focusing the W input shows the prop hint overlay; blur
   t.is(hintLengthAfterBlur, 0, 'prop hint overlay should clear shortly after blur')
 })
 
-test.serial('Props panel: W stepper click increases width by 1px, Shift+click by 10px', async t => {
+test.serial('Props panel: each .num-row is a single compact line (<=30px) containing a range and an input', async t => {
   const { page } = t.context
 
-  await page.evaluate(() => {
+  await page.evaluate(top => {
     window.ChangeTracker.clearAll()
     const el = document.createElement('div')
-    el.id = 'props-target-stepper'
-    el.style.cssText = 'position:fixed;left:50px;top:50px;width:150px;height:60px;z-index:1;background:#eee;'
+    el.id = 'layout-target'
+    el.textContent = 'Layout target'
+    el.style.cssText = `position:fixed;left:50px;top:${top}px;width:150px;height:60px;z-index:1;background:#eee;`
     document.body.appendChild(el)
-  })
-
-  await page.evaluate(() => {
-    const el = document.getElementById('props-target-stepper')
     document.querySelector('vis-bug').selectorEngine.select(el)
-  })
+  }, TARGET_TOP)
   await page.waitForTimeout(200)
 
-  const stepUpHandle = (await page.evaluateHandle(() => {
+  const rows = await page.evaluate(() => {
     const panel = document.querySelector('visbug-props')
-    const row = panel.$shadow.querySelector('.num-row[data-row-prop="width"]')
-    return row.querySelector('.step-btn[data-dir="1"]')
-  })).asElement()
-  t.truthy(stepUpHandle, 'the W stepper up button should be found inside the panel shadow root')
+    const rowEls = Array.from(panel.$shadow.querySelectorAll('.num-row'))
+    return rowEls.map(row => {
+      const r = row.getBoundingClientRect()
+      return {
+        prop: row.getAttribute('data-row-prop'),
+        height: r.height,
+        hasRange: !!row.querySelector('.range-input'),
+        hasInput: !!row.querySelector('.num-input, .opacity-input'),
+      }
+    })
+  })
 
-  await stepUpHandle.click()
-  await page.waitForTimeout(50)
-
-  const afterOneClick = await page.evaluate(() =>
-    document.getElementById('props-target-stepper').style.width)
-  t.is(afterOneClick, '151px', 'a single stepper click should increase width by 1px')
-
-  await page.keyboard.down('Shift')
-  await stepUpHandle.click()
-  await page.keyboard.up('Shift')
-  await page.waitForTimeout(50)
-
-  const afterShiftClick = await page.evaluate(() =>
-    document.getElementById('props-target-stepper').style.width)
-  t.is(afterShiftClick, '161px', 'a shift+click on the stepper should increase width by 10px')
-
-  const undoCount = await page.evaluate(() => window.ChangeTracker.getUndoStackSnapshot().length)
-  t.is(undoCount, 2, 'each stepper click is its own committed gesture (one undo entry per click)')
+  console.log('[props-panel e2e] num-row layout', rows)
+  t.true(rows.length > 0, 'there should be at least one .num-row')
+  rows.forEach(row => {
+    t.true(row.height <= 30, `num-row [${row.prop}] should be <= 30px tall (got ${row.height})`)
+    t.true(row.hasRange, `num-row [${row.prop}] should contain a range input`)
+    t.true(row.hasInput, `num-row [${row.prop}] should contain a value input`)
+  })
 })
 
-test.serial('Props panel: Settings theme toggles data-theme and panel background luminance', async t => {
+test.serial('Props panel: 순서 ▶ button swaps the element with its next sibling and keeps it selected', async t => {
   const { page } = t.context
 
-  await page.evaluate(() => {
+  await page.evaluate(top => {
+    window.ChangeTracker.clearAll()
+    const parent = document.createElement('div')
+    parent.id = 'order-parent'
+    parent.style.cssText = `position:fixed;left:50px;top:${top}px;width:300px;height:100px;z-index:1;background:#ddd;`
+    const a = document.createElement('div')
+    a.id = 'order-a'
+    a.textContent = 'A'
+    a.style.cssText = 'width:100px;height:40px;display:inline-block;background:#faa;'
+    const b = document.createElement('div')
+    b.id = 'order-b'
+    b.textContent = 'B'
+    b.style.cssText = 'width:100px;height:40px;display:inline-block;background:#aaf;'
+    parent.appendChild(a)
+    parent.appendChild(b)
+    document.body.appendChild(parent)
+    document.querySelector('vis-bug').selectorEngine.select(a)
+  }, TARGET_TOP)
+  await page.waitForTimeout(200)
+
+  const rightBtn = (await page.evaluateHandle(() => {
+    const panel = document.querySelector('visbug-props')
+    return panel.$shadow.querySelector('.order-btn[data-move-dir="right"]')
+  })).asElement()
+  t.truthy(rightBtn, 'the 순서 ▶ button should be found inside the panel shadow root')
+
+  await rightBtn.click()
+  await page.waitForTimeout(200)
+
+  const result = await page.evaluate(() => {
+    const parent = document.getElementById('order-parent')
+    const a = document.getElementById('order-a')
+    return {
+      order: Array.from(parent.children).map(c => c.id),
+      selected: a.hasAttribute('data-selected'),
+      selection: document.querySelector('vis-bug').selectorEngine.selection().length,
+    }
+  })
+  console.log('[props-panel e2e] order after clicking ▶', result)
+  t.deepEqual(result.order, ['order-b', 'order-a'], 'clicking ▶ should swap the element with its next sibling')
+  t.true(result.selected, 'the moved element should remain selected (data-selected attribute)')
+  t.is(result.selection, 1, 'exactly the moved element should remain in the selection')
+})
+
+test.serial('Props panel: 정렬(Flex) 가운데 button sets justify-content:center and creates exactly one undo entry', async t => {
+  const { page } = t.context
+
+  await page.evaluate(top => {
+    window.ChangeTracker.clearAll()
     const el = document.createElement('div')
-    el.id = 'props-theme-target'
-    el.style.cssText = 'position:fixed;left:50px;top:50px;width:100px;height:60px;z-index:1;background:#eee;'
+    el.id = 'flex-target'
+    el.style.cssText = `position:fixed;left:50px;top:${top}px;width:200px;height:80px;z-index:1;background:#eee;display:flex;`
     document.body.appendChild(el)
     document.querySelector('vis-bug').selectorEngine.select(el)
+  }, TARGET_TOP)
+  await page.waitForTimeout(200)
+
+  const before = await page.evaluate(() => window.ChangeTracker.getUndoStackSnapshot().length)
+
+  const controlsHidden = await page.evaluate(() => {
+    const panel = document.querySelector('visbug-props')
+    return panel.$shadow.querySelector('.flex-controls').hidden
   })
+  t.false(controlsHidden, 'flex controls should be visible for an already-flex element')
+
+  const centerBtn = (await page.evaluateHandle(() => {
+    const panel = document.querySelector('visbug-props')
+    return panel.$shadow.querySelector('.flex-btn[data-flex-prop="justifyContent"][data-flex-value="center"]')
+  })).asElement()
+  t.truthy(centerBtn, 'the 가운데 justify-content button should be found')
+
+  await centerBtn.click()
+  await page.waitForTimeout(150)
+
+  const after = await page.evaluate(() => {
+    const el = document.getElementById('flex-target')
+    return {
+      justifyContent: el.style.justifyContent,
+      undoLength: window.ChangeTracker.getUndoStackSnapshot().length,
+    }
+  })
+  console.log('[props-panel e2e] after 가운데 click', after)
+  t.is(after.justifyContent, 'center', 'clicking 가운데 should set justify-content: center')
+  t.is(after.undoLength, before + 1, 'exactly one undo entry should be created for the click')
+})
+
+test.serial('Props panel: Settings theme toggles data-theme on host', async t => {
+  const { page } = t.context
+
+  await page.evaluate(top => {
+    const el = document.createElement('div')
+    el.id = 'props-theme-target'
+    el.style.cssText = `position:fixed;left:50px;top:${top}px;width:100px;height:60px;z-index:1;background:#eee;`
+    document.body.appendChild(el)
+    document.querySelector('vis-bug').selectorEngine.select(el)
+  }, TARGET_TOP)
   await page.waitForTimeout(200)
 
   await page.evaluate(() => window.DesignPokeSettings.set({ theme: 'light' }))
   await page.waitForTimeout(150)
 
-  const light = await page.evaluate(() => {
-    const panel = document.querySelector('visbug-props')
-    const panelEl = panel.$shadow.querySelector('.panel')
-    const bg = getComputedStyle(panelEl).backgroundColor
-    const [r, g, b] = bg.match(/[\d.]+/g).map(Number)
-    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
-    return { theme: panel.getAttribute('data-theme'), luminance }
-  })
-  console.log('[props-panel e2e] light theme', light)
-  t.is(light.theme, 'light', 'host should carry data-theme="light"')
-  t.true(light.luminance > 0.8, `light panel background should be bright (luminance > 0.8, got ${light.luminance})`)
+  const light = await page.evaluate(() => document.querySelector('visbug-props').getAttribute('data-theme'))
+  t.is(light, 'light', 'host should carry data-theme="light"')
 
   await page.evaluate(() => window.DesignPokeSettings.set({ theme: 'dark' }))
   await page.waitForTimeout(150)
@@ -301,13 +391,13 @@ test.serial('Props panel: Settings theme toggles data-theme and panel background
 test.serial('Props panel: Settings opacity is applied to the host style.opacity', async t => {
   const { page } = t.context
 
-  await page.evaluate(() => {
+  await page.evaluate(top => {
     const el = document.createElement('div')
     el.id = 'props-opacity-target'
-    el.style.cssText = 'position:fixed;left:50px;top:50px;width:100px;height:60px;z-index:1;background:#eee;'
+    el.style.cssText = `position:fixed;left:50px;top:${top}px;width:100px;height:60px;z-index:1;background:#eee;`
     document.body.appendChild(el)
     document.querySelector('vis-bug').selectorEngine.select(el)
-  })
+  }, TARGET_TOP)
   await page.waitForTimeout(200)
 
   await page.evaluate(() => window.DesignPokeSettings.set({ opacity: 0.5 }))
@@ -315,69 +405,4 @@ test.serial('Props panel: Settings opacity is applied to the host style.opacity'
 
   const opacity = await page.evaluate(() => document.querySelector('visbug-props').style.opacity)
   t.is(opacity, '0.5', 'Settings should apply opacity directly to the host style')
-})
-
-test.serial('Props panel: dragging the header moves the host and persists position across reload', async t => {
-  const { page } = t.context
-
-  await page.evaluate(() => {
-    const el = document.createElement('div')
-    el.id = 'props-drag-target'
-    el.style.cssText = 'position:fixed;left:50px;top:50px;width:100px;height:60px;z-index:1;background:#eee;'
-    document.body.appendChild(el)
-    document.querySelector('vis-bug').selectorEngine.select(el)
-  })
-  await page.waitForTimeout(200)
-
-  const before = await page.evaluate(() => {
-    const host = document.querySelector('visbug-props')
-    const r = host.getBoundingClientRect()
-    const header = host.$shadow.querySelector('.header')
-    const hr = header.getBoundingClientRect()
-    return { left: r.left, top: r.top, headerX: hr.left + hr.width / 2, headerY: hr.top + hr.height / 2 }
-  })
-
-  await page.mouse.move(before.headerX, before.headerY)
-  await page.mouse.down()
-  await page.mouse.move(before.headerX - 100, before.headerY, { steps: 10 })
-  await page.mouse.up()
-  await page.waitForTimeout(150)
-
-  const after = await page.evaluate(() => {
-    const host = document.querySelector('visbug-props')
-    const r = host.getBoundingClientRect()
-    return { left: r.left, top: r.top }
-  })
-  console.log('[props-panel e2e] drag before/after', before, after)
-  t.true(Math.abs((before.left - after.left) - 100) < 5,
-    `left should have decreased by ~100px (actual delta ${before.left - after.left})`)
-
-  const savedPosition = await page.evaluate(() => window.DesignPokeSettings.get().positions.props)
-  console.log('[props-panel e2e] saved position', savedPosition)
-  t.truthy(savedPosition, 'dragging should persist a saved position for the props panel')
-  t.true(Math.abs(savedPosition.left - after.left) < 5, 'saved position should match the dragged-to location')
-
-  // 새로고침 후 저장된 위치가 복원되는지 확인
-  await page.reload()
-  await page.waitForSelector('vis-bug', { timeout: 10000 })
-  await page.waitForSelector('visbug-props', { timeout: 10000 })
-  await page.evaluate(() => document.body.setAttribute('testing', true))
-
-  await page.evaluate(() => {
-    const el = document.createElement('div')
-    el.id = 'props-drag-target-2'
-    el.style.cssText = 'position:fixed;left:50px;top:50px;width:100px;height:60px;z-index:1;background:#eee;'
-    document.body.appendChild(el)
-    document.querySelector('vis-bug').selectorEngine.select(el)
-  })
-  await page.waitForTimeout(300)
-
-  const afterReload = await page.evaluate(() => {
-    const host = document.querySelector('visbug-props')
-    const r = host.getBoundingClientRect()
-    return { left: r.left, top: r.top }
-  })
-  console.log('[props-panel e2e] position after reload', afterReload)
-  t.true(Math.abs(afterReload.left - after.left) < 5,
-    `panel should reopen at the saved dragged position after reload (expected ~${after.left}, got ${afterReload.left})`)
 })

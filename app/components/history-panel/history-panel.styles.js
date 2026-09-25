@@ -4,13 +4,9 @@
 export const HistoryPanelStyles = `
   :host {
     all: initial;
+    display: block;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-size: 12px;
-
-    position: fixed;
-    top: 80px;
-    right: 20px;
-    z-index: 2147483646;
 
     /* dark (기본) 팔레트 */
     --dp-bg: hsl(0 0% 10%);
@@ -80,33 +76,19 @@ export const HistoryPanelStyles = `
 
   .panel {
     background: var(--dp-bg);
-    border: 1px solid var(--dp-border);
-    border-radius: 8px;
-    box-shadow: 0 4px 20px var(--dp-shadow);
-    min-width: 220px;
-    max-width: 320px;
     overflow: hidden;
-    transition: box-shadow 0.15s, background 0.15s, border-color 0.15s;
-  }
-
-  :host([data-dragging]) .panel {
-    box-shadow: 0 8px 28px var(--dp-shadow-drag);
+    transition: background 0.15s, border-color 0.15s;
   }
 
   .header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 8px 12px;
+    padding: 6px 8px;
     background: var(--dp-bg-2);
     border-bottom: 1px solid var(--dp-border);
-    cursor: grab;
     user-select: none;
     gap: 8px;
-  }
-
-  .header:active {
-    cursor: grabbing;
   }
 
   .header-title {
@@ -114,14 +96,6 @@ export const HistoryPanelStyles = `
     align-items: center;
     gap: 6px;
     min-width: 0;
-  }
-
-  .drag-grip {
-    color: var(--dp-text-faint);
-    font-size: 12px;
-    line-height: 1;
-    letter-spacing: -1px;
-    flex: none;
   }
 
   .title {
@@ -162,11 +136,6 @@ export const HistoryPanelStyles = `
     color: var(--dp-text-hover);
   }
 
-  .btn-close:hover {
-    background: var(--dp-danger);
-    color: hsl(0 0% 100%);
-  }
-
   .btn-compare.active,
   .btn-help.active {
     background: var(--dp-accent-bg);
@@ -175,8 +144,6 @@ export const HistoryPanelStyles = `
 
   .content {
     padding: 8px;
-    max-height: 300px;
-    overflow-y: auto;
   }
 
   .content::-webkit-scrollbar {

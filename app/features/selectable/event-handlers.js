@@ -42,6 +42,8 @@ export function createEventHandlers({
     document.addEventListener('copy', on_copy)
     document.addEventListener('cut', on_cut)
     document.addEventListener('paste', on_paste)
+    document.addEventListener('keyup', on_alt_release)
+    document.addEventListener('mouseleave', on_page_mouseleave)
 
     watchCommandKey()
 
@@ -72,6 +74,8 @@ export function createEventHandlers({
     document.removeEventListener('copy', on_copy)
     document.removeEventListener('cut', on_cut)
     document.removeEventListener('paste', on_paste)
+    document.removeEventListener('keyup', on_alt_release)
+    document.removeEventListener('mouseleave', on_page_mouseleave)
 
     hotkeys.unbind(`esc,${metaKey}+d,backspace,del,delete,alt+del,alt+backspace,${metaKey}+e,${metaKey}+shift+e,${metaKey}+g,${metaKey}+shift+g,tab,shift+tab,enter,shift+enter,${metaKey}+z,${metaKey}+shift+z,alt+s,shift+h`)
   }
@@ -353,7 +357,13 @@ export function createEventHandlers({
 
     const hover_state = getHoverState()
 
-    if (tool === 'guides' && selected.length >= 1 && !selected.includes($target)) {
+    // guides 도구가 아니어도 Alt를 누른 채 선택된 요소가 있으면(그리고 그 요소가
+    // 호버 대상이 아니면) 피그마처럼 거리 측정을 보여준다. g 단축키로 켜는
+    // guides 도구 모드는 그대로 동작해야 하므로 별도 분기로 판단한다.
+    const isGuidesMeasuring = tool === 'guides' && selected.length >= 1 && !selected.includes($target)
+    const isAltMeasuring    = !isGuidesMeasuring && e.altKey && selected.length >= 1 && !selected.includes($target)
+
+    if (isGuidesMeasuring || isAltMeasuring) {
       $target.setAttribute('data-measuring', true)
       const [$anchor] = selected
       createMeasurements({$anchor, $target})
@@ -371,12 +381,23 @@ export function createEventHandlers({
     }
 
     // force promote into top layer
-    if (tool === 'guides') {
+    if (tool === 'guides' || isAltMeasuring) {
       getHandles().forEach(handle => {
         handle.hidePopover &&  handle.hidePopover()
         handle.showPopover && handle.showPopover()
       })
     }
+  }
+
+  // Alt 키를 떼면(도구와 무관하게) Alt+호버로 만든 거리 측정을 지운다.
+  // guides 도구 자체는 Alt와 무관하게 계속 동작해야 하므로 esc 처리와는 별개다.
+  const on_alt_release = e => {
+    if (e.key === 'Alt' && visbug.activeTool !== 'guides') clearMeasurements()
+  }
+
+  // 마우스가 문서 밖으로 나가면(뷰포트 이탈) Alt+호버 측정을 지운다.
+  const on_page_mouseleave = () => {
+    if (visbug.activeTool !== 'guides') clearMeasurements()
   }
 
   const on_select_children = (e, {key}) => {

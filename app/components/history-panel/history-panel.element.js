@@ -7,16 +7,13 @@ import { HistoryPanelStyles } from './history-panel.styles'
 import { AIFormatter } from '../../features/ai-formatter'
 import { copyScreenshotImage, copyScreenshotPath, captureAnnotated } from '../../features/screenshot'
 import { Settings } from '../../features/settings'
-import { makeMovable } from '../../utilities/panel-dock'
 
 export class HistoryPanel extends HTMLElement {
   constructor() {
     super()
     this.$shadow = this.attachShadow({ mode: 'closed' })
-    this.isMinimized = false
     this.updateInterval = null
     this._unregisterTheme = null
-    this._undock = null
 
     // 원본 보기(비교) 상태 - 누르고 있기(hold) + `\` 토글 두 입력을 함께 지원
     this._compareHold = false
@@ -46,14 +43,6 @@ export class HistoryPanel extends HTMLElement {
 
     // 테마(다크/라이트) + 투명도 - Settings 가 data-theme 속성과 style.opacity 를 관리
     this._unregisterTheme = Settings.registerPanel(this)
-
-    // 자유 이동 + 위치 기억 (기본 위치는 CSS의 :host 규칙)
-    const headerEl = this.$shadow.querySelector('.header')
-    this._undock = makeMovable({ host: this, handle: headerEl, key: 'history' })
-
-    // popover로 최상위 레이어 유지
-    this.setAttribute('popover', 'manual')
-    this.showPopover && this.showPopover()
   }
 
   disconnectedCallback() {
@@ -64,8 +53,6 @@ export class HistoryPanel extends HTMLElement {
     document.removeEventListener('touchend', this._onDocumentMouseUp)
     document.removeEventListener('keydown', this._onDocumentKeydown)
     this._unregisterTheme && this._unregisterTheme()
-    this._undock && this._undock()
-    this.hidePopover && this.hidePopover()
   }
 
   // 마우스/터치 릴리즈 - 누르고 있던 원본 보기 해제
@@ -124,7 +111,6 @@ export class HistoryPanel extends HTMLElement {
       <div class="panel">
         <div class="header">
           <div class="header-title">
-            <span class="drag-grip" aria-hidden="true">⋮⋮</span>
             <span class="title">변경 이력 <span class="count">0</span></span>
           </div>
           <div class="buttons">
@@ -132,8 +118,6 @@ export class HistoryPanel extends HTMLElement {
             <button class="btn-annotated-screenshot" title="표시 스크린샷 복사">🖍️</button>
             <button class="btn-compare" title="원본 보기 (누르고 있기 또는 \\ 키)">⇄</button>
             <button class="btn-help" title="도움말">?</button>
-            <button class="btn-minimize" title="최소화">_</button>
-            <button class="btn-close" title="닫기">×</button>
           </div>
         </div>
         <div class="content">
@@ -163,18 +147,8 @@ export class HistoryPanel extends HTMLElement {
 
 
   setupButtons() {
-    const btnMinimize = this.$shadow.querySelector('.btn-minimize')
-    const btnClose = this.$shadow.querySelector('.btn-close')
     const btnCompare = this.$shadow.querySelector('.btn-compare')
     const btnHelp = this.$shadow.querySelector('.btn-help')
-
-    btnMinimize.addEventListener('click', () => {
-      this.toggleMinimize()
-    })
-
-    btnClose.addEventListener('click', () => {
-      this.style.display = 'none'
-    })
 
     // 원본 보기 - 누르고 있는 동안만 원본 스타일 표시 (클릭 토글이 아님, `\` 키로도 토글 가능)
     btnCompare.addEventListener('mousedown', (e) => {
@@ -551,22 +525,6 @@ export class HistoryPanel extends HTMLElement {
     }, 1500)
   }
 
-  toggleMinimize() {
-    this.isMinimized = !this.isMinimized
-    const content = this.$shadow.querySelector('.content')
-    const btnMinimize = this.$shadow.querySelector('.btn-minimize')
-
-    if (this.isMinimized) {
-      content.style.display = 'none'
-      btnMinimize.textContent = '□'
-      btnMinimize.title = '복원'
-    } else {
-      content.style.display = 'block'
-      btnMinimize.textContent = '_'
-      btnMinimize.title = '최소화'
-    }
-  }
-
   startAutoUpdate() {
     // 500ms마다 업데이트 (단, 항목을 호버해 미리보기 중이면 재렌더링을 건너뛴다)
     this.updateInterval = setInterval(() => {
@@ -601,17 +559,6 @@ export class HistoryPanel extends HTMLElement {
     }
   }
 
-  // 패널 표시
-  show() {
-    this.style.display = 'block'
-    this.showPopover && this.showPopover()
-  }
-
-  // 패널 숨기기
-  hide() {
-    this.style.display = 'none'
-    this.hidePopover && this.hidePopover()
-  }
 }
 
 customElements.define('visbug-history', HistoryPanel)

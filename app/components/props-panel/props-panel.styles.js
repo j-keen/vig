@@ -2,122 +2,52 @@
 // 테마(dark/light)는 Settings.registerPanel 이 호스트에 심어주는 data-theme 속성이
 // 유일한 기준이다 (prefers-color-scheme 미디어쿼리는 사용하지 않는다).
 // opacity 는 Settings 가 호스트(:host)에 직접 적용하므로 이 스타일시트에서는 건드리지 않는다.
+//
+// 이 패널은 우측 사이드 패널(shell)의 light-DOM 자식으로 슬롯되는 콘텐츠다.
+// 따라서 :host 는 position:fixed 가 아니라 display:block; width:100% 이며,
+// 배경/테두리/스크롤은 셸이 담당하고 .panel 은 투명한 콘텐츠 블록일 뿐이다.
 export const PropsPanelStyles = `
   :host {
     all: initial;
-    position: fixed;
-    top: 72px;
-    right: 12px;
-    max-width: 240px;
-    z-index: 2147483646;
-    pointer-events: none;
+    display: block;
+    width: 100%;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-size: 11px;
   }
 
   .panel {
-    width: 240px;
-    max-height: calc(100vh - 96px);
-    display: flex;
-    flex-direction: column;
-    background: hsl(0 0% 10%);
-    border: 1px solid hsl(0 0% 25%);
-    border-radius: 8px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-    overflow: hidden;
+    width: 100%;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    border-radius: 0;
+    max-height: none;
     color: hsl(0 0% 85%);
-    pointer-events: auto;
   }
 
   :host([data-theme="light"]) .panel {
-    background: hsl(0 0% 100%);
-    border-color: hsl(0 0% 85%);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
     color: #111;
   }
 
-  :host([data-dragging]) .panel {
-    box-shadow: 0 10px 34px rgba(0, 0, 0, 0.55);
+  .empty-hint {
+    padding: 16px 10px;
+    text-align: center;
+    color: hsl(0 0% 50%);
+    font-size: 11px;
+    line-height: 1.5;
   }
 
-  :host([data-theme="light"][data-dragging]) .panel {
-    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
-  }
-
-  .panel[hidden] {
-    display: none;
-  }
-
-  .header {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 10px;
-    background: hsl(0 0% 15%);
-    border-bottom: 1px solid hsl(0 0% 25%);
-    cursor: grab;
-    user-select: none;
-  }
-
-  :host([data-theme="light"]) .header {
-    background: hsl(0 0% 95%);
-    border-bottom-color: hsl(0 0% 85%);
-  }
-
-  .header:active {
-    cursor: grabbing;
-  }
-
-  :host([data-dragging]) .header {
-    cursor: grabbing;
-  }
-
-  .grip-icon {
-    flex: none;
+  :host([data-theme="light"]) .empty-hint {
     color: hsl(0 0% 45%);
-    letter-spacing: -1px;
-    font-size: 12px;
-  }
-
-  :host([data-theme="light"]) .grip-icon {
-    color: hsl(0 0% 60%);
-  }
-
-  .header .label {
-    flex: 1 1 auto;
-    font-weight: 600;
-    color: hsl(200 100% 70%);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  :host([data-theme="light"]) .header .label {
-    color: hsl(205 90% 40%);
   }
 
   .body {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-y: auto;
-    padding: 6px 10px 10px;
-  }
-
-  .body::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .body::-webkit-scrollbar-thumb {
-    background: hsl(0 0% 35%);
-    border-radius: 3px;
-  }
-
-  :host([data-theme="light"]) .body::-webkit-scrollbar-thumb {
-    background: hsl(0 0% 80%);
+    overflow: visible;
+    padding: 4px 8px 10px;
   }
 
   section {
-    padding: 8px 0;
+    padding: 6px 0;
     border-bottom: 1px solid hsl(0 0% 20%);
   }
 
@@ -130,67 +60,66 @@ export const PropsPanelStyles = `
   }
 
   .section-title {
-    font-weight: 600;
-    color: hsl(0 0% 55%);
-    margin-bottom: 6px;
-    letter-spacing: 0.02em;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: hsl(0 0% 50%);
+    margin-bottom: 4px;
+    letter-spacing: 0.04em;
   }
 
   :host([data-theme="light"]) .section-title {
-    color: hsl(0 0% 40%);
+    color: hsl(0 0% 42%);
   }
 
   .hint {
     color: hsl(40 90% 60%);
     font-size: 10px;
-    padding: 2px 0 4px;
+    padding: 0 0 4px;
   }
 
   :host([data-theme="light"]) .hint {
     color: hsl(35 85% 40%);
   }
 
+  .flex-hint {
+    color: hsl(0 0% 50%);
+  }
+
+  :host([data-theme="light"]) .flex-hint {
+    color: hsl(0 0% 45%);
+  }
+
+  /* 프로퍼티 한 줄씩 세로로 쌓는 컨테이너 */
   .row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-  }
-
-  .field {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    flex: 1 1 auto;
-    min-width: 70px;
-  }
-
-  /* 게이지형 숫자 행: 라벨 + 스테퍼 + 입력 (위) / 슬라이더 (아래) */
-  .num-row {
     display: flex;
     flex-direction: column;
     gap: 4px;
-    padding: 3px 4px;
-    border-radius: 5px;
-    margin-bottom: 4px;
   }
 
-  .num-row:last-child {
-    margin-bottom: 0;
+  .row.tight {
+    gap: 2px;
   }
 
-  .num-row-top {
+  /* 한 줄 게이지 행: [라벨][게이지바][입력+단위] */
+  .num-row {
     display: flex;
     align-items: center;
     gap: 4px;
+    height: 22px;
+    padding: 2px 4px;
+    border-radius: 4px;
+    box-sizing: border-box;
   }
 
   .num-label {
+    width: 28px;
+    flex: none;
     color: hsl(0 0% 60%);
     cursor: ew-resize;
     user-select: none;
-    width: 16px;
-    flex: none;
     text-align: center;
+    font-size: 10px;
   }
 
   :host([data-theme="light"]) .num-label {
@@ -202,51 +131,9 @@ export const PropsPanelStyles = `
     opacity: 0.4;
   }
 
-  .stepper {
-    display: flex;
-    flex-direction: column;
-    flex: none;
-  }
-
-  .step-btn {
-    all: unset;
-    width: 13px;
-    height: 10px;
-    line-height: 10px;
-    text-align: center;
-    font-size: 7px;
-    color: hsl(0 0% 55%);
-    background: hsl(0 0% 16%);
-    cursor: pointer;
-    user-select: none;
-  }
-
-  :host([data-theme="light"]) .step-btn {
-    background: hsl(0 0% 92%);
-    color: hsl(0 0% 35%);
-  }
-
-  .step-btn:first-child {
-    border-radius: 3px 3px 0 0;
-  }
-
-  .step-btn:last-child {
-    border-radius: 0 0 3px 3px;
-  }
-
-  .step-btn:hover {
-    background: hsl(200 70% 35%);
-    color: #fff;
-  }
-
-  .step-btn:disabled {
-    opacity: 0.35;
-    cursor: not-allowed;
-    pointer-events: none;
-  }
-
   .range-input {
-    width: 100%;
+    flex: 1 1 auto;
+    min-width: 40px;
     display: block;
     -webkit-appearance: none;
     appearance: none;
@@ -274,9 +161,9 @@ export const PropsPanelStyles = `
   .range-input::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 14px;
-    height: 14px;
-    margin-top: -5.5px;
+    width: 12px;
+    height: 12px;
+    margin-top: -4.5px;
     border-radius: 50%;
     background: hsl(200 100% 60%);
     border: 2px solid hsl(0 0% 100%);
@@ -294,8 +181,8 @@ export const PropsPanelStyles = `
   }
 
   .range-input::-moz-range-thumb {
-    width: 14px;
-    height: 14px;
+    width: 12px;
+    height: 12px;
     border-radius: 50%;
     background: hsl(200 100% 60%);
     border: 2px solid hsl(0 0% 100%);
@@ -315,11 +202,12 @@ export const PropsPanelStyles = `
   .input-wrap {
     display: flex;
     align-items: center;
+    gap: 2px;
     background: hsl(0 0% 16%);
     border: 1px solid hsl(0 0% 27%);
     border-radius: 4px;
-    padding: 3px 5px;
-    flex: 1 1 auto;
+    padding: 2px 4px;
+    flex: 0 0 52px;
     min-width: 0;
   }
 
@@ -337,6 +225,7 @@ export const PropsPanelStyles = `
     width: 100%;
     color: inherit;
     font-size: 11px;
+    text-align: right;
     font-variant-numeric: tabular-nums;
   }
 
@@ -344,14 +233,25 @@ export const PropsPanelStyles = `
     opacity: 0.4;
   }
 
+  .opacity-value {
+    flex: 1 1 auto;
+    text-align: right;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+
   .unit {
     color: hsl(0 0% 45%);
-    font-size: 10px;
+    font-size: 9px;
     flex: none;
   }
 
   :host([data-theme="light"]) .unit {
     color: hsl(0 0% 55%);
+  }
+
+  .select-row {
+    margin-top: 6px;
   }
 
   select.select-input {
@@ -405,28 +305,6 @@ export const PropsPanelStyles = `
     color: white;
   }
 
-  .opacity-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .opacity-row input[type="range"] {
-    flex: 1;
-    accent-color: hsl(200 100% 55%);
-  }
-
-  .opacity-value {
-    width: 34px;
-    text-align: right;
-    color: hsl(0 0% 60%);
-    flex: none;
-  }
-
-  :host([data-theme="light"]) .opacity-value {
-    color: hsl(0 0% 40%);
-  }
-
   .color-row {
     display: flex;
     align-items: center;
@@ -478,6 +356,105 @@ export const PropsPanelStyles = `
   :host([data-theme="light"]) .color-row .hex-input {
     background: hsl(0 0% 100%);
     border-color: hsl(0 0% 78%);
+  }
+
+  /* 정렬 (Flex) */
+  .flex-make-btn {
+    width: 100%;
+    padding: 6px 0;
+    margin-top: 2px;
+    border-radius: 4px;
+    background: hsl(200 70% 35%);
+    border: 1px solid hsl(200 70% 45%);
+    color: white;
+    cursor: pointer;
+    font-size: 11px;
+  }
+
+  .flex-make-btn:hover {
+    background: hsl(200 70% 40%);
+  }
+
+  .flex-group-label {
+    font-size: 10px;
+    color: hsl(0 0% 55%);
+    margin: 6px 0 3px;
+  }
+
+  :host([data-theme="light"]) .flex-group-label {
+    color: hsl(0 0% 42%);
+  }
+
+  .flex-group-label:first-child {
+    margin-top: 2px;
+  }
+
+  .flex-btn-row {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 2px;
+  }
+
+  .flex-btn {
+    flex: 1;
+    background: hsl(0 0% 16%);
+    border: 1px solid hsl(0 0% 27%);
+    color: hsl(0 0% 75%);
+    border-radius: 4px;
+    padding: 4px 0;
+    cursor: pointer;
+    font-size: 10px;
+  }
+
+  :host([data-theme="light"]) .flex-btn {
+    background: hsl(0 0% 100%);
+    border-color: hsl(0 0% 78%);
+    color: hsl(0 0% 30%);
+  }
+
+  .flex-btn:hover {
+    background: hsl(0 0% 22%);
+  }
+
+  :host([data-theme="light"]) .flex-btn:hover {
+    background: hsl(0 0% 92%);
+  }
+
+  .flex-btn.active {
+    background: hsl(200 70% 35%);
+    border-color: hsl(200 70% 50%);
+    color: white;
+  }
+
+  /* 순서 */
+  .order-row {
+    display: flex;
+    gap: 4px;
+  }
+
+  .order-btn {
+    flex: 1;
+    background: hsl(0 0% 16%);
+    border: 1px solid hsl(0 0% 27%);
+    color: hsl(0 0% 75%);
+    border-radius: 4px;
+    padding: 5px 0;
+    cursor: pointer;
+    font-size: 12px;
+  }
+
+  :host([data-theme="light"]) .order-btn {
+    background: hsl(0 0% 100%);
+    border-color: hsl(0 0% 78%);
+    color: hsl(0 0% 30%);
+  }
+
+  .order-btn:hover {
+    background: hsl(0 0% 22%);
+  }
+
+  :host([data-theme="light"]) .order-btn:hover {
+    background: hsl(0 0% 92%);
   }
 `
 

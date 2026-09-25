@@ -25,84 +25,52 @@ const teardownPptrTab = async ({ context: { page, browser } }) => {
 test.beforeEach(async t => { await setupPptrTab(t) })
 test.afterEach.always(async t => { await teardownPptrTab(t) })
 
-test.serial('Toolbar shows 6 visible tools; margin/padding/font/hueshift are hidden but still reachable', async t => {
+test.serial('Hidden tools (margin/padding/font/hueshift) have no toolbar button but still work via hotkey', async t => {
   const { page } = t.context
-  const info = await page.evaluate(() => {
-    const vb = document.querySelector('vis-bug')
-    const lis = [...vb.$shadow.querySelectorAll('ol:first-of-type > li')]
-    return {
-      total: lis.length,
-      // 속성이 아니라 실제 렌더링 여부(display)로 검사한다. author CSS 가 UA [hidden] 을 덮을 수 있다.
-      visible: lis.filter(li => getComputedStyle(li).display !== 'none').map(li => li.dataset.tool),
-      hidden: lis.filter(li => getComputedStyle(li).display === 'none').map(li => li.dataset.tool),
-      colorsHidden: getComputedStyle(vb.$shadow.querySelector('ol[colors]')).display === 'none',
-      toolbarHeight: vb.$shadow.querySelector('ol:first-of-type').getBoundingClientRect().height,
-    }
-  })
-  t.is(info.total, 10)
-  t.deepEqual(info.visible, ['position', 'text', 'align', 'move', 'guides', 'aicopy'])
-  t.deepEqual(info.hidden, ['margin', 'padding', 'font', 'hueshift'])
-  t.true(info.colorsHidden)
-  t.true(info.toolbarHeight < 6 * 40 + 20, `toolbar should be 6 buttons tall, got ${info.toolbarHeight}px`)
-
   await page.keyboard.press('m')
   await page.waitForTimeout(100)
   t.is(await page.evaluate(() => document.querySelector('vis-bug').activeTool), 'margin', 'hidden tool still works via hotkey')
+
+  await page.keyboard.press('l')
+  await page.waitForTimeout(100)
+  t.is(await page.evaluate(() => document.querySelector('vis-bug').activeTool), 'position')
 })
 
-test.serial('Settings: theme and opacity apply to the toolbar and registered panels; popover toggles', async t => {
+test.serial('Settings popover in the side panel: theme/opacity apply globally and the popover shows the version', async t => {
   const { page } = t.context
   const out = await page.evaluate(async () => {
+    const shell = document.querySelector('visbug-side-panel')
     const vb = document.querySelector('vis-bug')
     const S = window.DesignPokeSettings
     await S.load()
     S.set({ theme: 'light', opacity: 0.6 })
     await new Promise(r => setTimeout(r, 50))
     const res = {
-      scheme: vb.getAttribute('color-scheme'),
-      opacity: vb.style.opacity,
-      radioLight: vb.$shadow.querySelector('input[name="theme"][value="light"]').checked,
-      rangeVal: vb.$shadow.querySelector('input[name="opacity"]').value,
+      shellTheme: shell.getAttribute('data-theme'),
+      shellOpacity: shell.style.opacity,
+      settingsTheme: S.get().theme,
+      radioLight: shell.$shadow.querySelector('input[name="theme"][value="light"]').checked,
+      rangeVal: shell.$shadow.querySelector('input[name="opacity"]').value,
       stored: JSON.parse(localStorage.getItem('designpoke.settings')),
+      versionText: shell.$shadow.querySelector('.settings-popover .version').textContent,
+      expectedVersion: vb.getAttribute('version') || 'dev',
     }
-    vb.$shadow.querySelector('[data-settings-toggle]').click()
-    res.popoverOpen = !vb.$shadow.querySelector('[settings-popover]').hasAttribute('hidden')
-    vb.$shadow.querySelector('[data-settings-toggle]').click()
-    res.popoverClosed = vb.$shadow.querySelector('[settings-popover]').hasAttribute('hidden')
+    shell.$shadow.querySelector('[data-settings-toggle]').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    res.popoverOpen = !shell.$shadow.querySelector('.settings-popover').hasAttribute('hidden')
+    shell.$shadow.querySelector('[data-settings-toggle]').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    res.popoverClosed = shell.$shadow.querySelector('.settings-popover').hasAttribute('hidden')
     S.set({ theme: 'dark', opacity: 1 })
     return res
   })
-  t.is(out.scheme, 'light')
-  t.is(out.opacity, '0.6')
+  t.is(out.shellTheme, 'light')
+  t.is(out.shellOpacity, '0.6')
+  t.is(out.settingsTheme, 'light')
   t.true(out.radioLight)
   t.is(out.rangeVal, '60')
   t.is(out.stored.theme, 'light')
+  t.is(out.versionText, out.expectedVersion)
   t.true(out.popoverOpen)
   t.true(out.popoverClosed)
-})
-
-test.serial('Toolbar drag position is remembered', async t => {
-  const { page } = t.context
-  const before = await page.evaluate(() => {
-    const vb = document.querySelector('vis-bug')
-    // 툴 버튼을 잡고 끌면 툴바가 이동한다 (5px 이상 움직이면 클릭이 아닌 드래그로 처리)
-    const li = vb.$shadow.querySelector('li[data-tool="guides"]')
-    const r = li.getBoundingClientRect()
-    const host = vb.getBoundingClientRect()
-    return { x: r.left + r.width / 2, y: r.top + r.height / 2, left: host.left, top: host.top }
-  })
-  await page.mouse.move(before.x, before.y)
-  await page.mouse.down()
-  await page.mouse.move(before.x + 80, before.y + 60, { steps: 6 })
-  await page.mouse.up()
-  await page.waitForTimeout(200)
-  const after = await page.evaluate(() => {
-    const host = document.querySelector('vis-bug').getBoundingClientRect()
-    return { left: host.left, top: host.top, saved: window.DesignPokeSettings.get().positions.toolbar }
-  })
-  t.true(after.left > before.left + 40, `toolbar should move right (${before.left} → ${after.left})`)
-  t.truthy(after.saved, 'position should be saved in settings')
-  t.true(Math.abs(after.saved.left - after.left) <= 2)
 })
 
 test.serial('Selection survives a framework-style node replacement', async t => {

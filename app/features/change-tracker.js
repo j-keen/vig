@@ -7,6 +7,7 @@ export const trackedProperties = [
   'marginTop', 'marginRight', 'marginBottom', 'marginLeft',
   'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
   'transform',
+  'display', 'flexDirection', 'justifyContent', 'alignItems', 'gap',
   'flexGrow', 'flexShrink', 'flexBasis',
   'minWidth', 'maxWidth', 'minHeight', 'maxHeight',
   'transformOrigin',

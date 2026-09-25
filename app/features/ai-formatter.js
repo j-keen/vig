@@ -230,6 +230,11 @@ const propertyDescriptions = {
   textAlign:       { set: '정렬 변경' },
   borderRadius:    { set: '모서리 둥글기 변경' },
   opacity:         { increase: '불투명도 증가', decrease: '불투명도 감소' },
+  display:         { set: 'display 변경' },
+  flexDirection:   { set: 'flex 방향 변경' },
+  justifyContent:  { set: '가로 정렬 변경' },
+  alignItems:      { set: '세로 정렬 변경' },
+  gap:             { increase: '간격 증가', decrease: '간격 감소' },
 }
 
 function truncateTrackedText(value, max = 60) {
