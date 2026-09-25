@@ -190,3 +190,33 @@ test.serial('Hovering slotted content inside an open shadow host does not throw 
   t.true(out.selected >= 1, 'clicking slotted content should still select something')
   t.log('shadowRoot.elementFromPoint returned null:', out.shadowHitIsNull)
 })
+
+test.serial('Side panel pushes the page aside (html margin-right = panel width), collapse shrinks it, removal restores it', async t => {
+  const { page } = t.context
+  const out = await page.evaluate(async () => {
+    const sp = document.querySelector('visbug-side-panel')
+    const root = document.documentElement
+    const res = {}
+    // 패널 폭은 ResizeObserver 로 반영되므로 한 프레임 기다린다
+    await new Promise(r => setTimeout(r, 100))
+    res.panelWidth = Math.round(sp.getBoundingClientRect().width)
+    res.marginOpen = getComputedStyle(root).marginRight
+    res.htmlWidth = Math.round(root.getBoundingClientRect().width)
+    res.viewport = window.innerWidth
+    sp.$shadow.querySelector('[data-collapse-toggle]').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await new Promise(r => setTimeout(r, 50))
+    res.marginCollapsed = getComputedStyle(root).marginRight
+    sp.$shadow.querySelector('[data-collapse-toggle]').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await new Promise(r => setTimeout(r, 50))
+    res.marginReopened = getComputedStyle(root).marginRight
+    document.querySelector('vis-bug').remove()
+    await new Promise(r => setTimeout(r, 50))
+    res.marginAfterRemove = getComputedStyle(root).marginRight
+    return res
+  })
+  t.is(out.marginOpen, `${out.panelWidth}px`)
+  t.true(out.htmlWidth <= out.viewport - out.panelWidth, `html box (${out.htmlWidth}) should be viewport (${out.viewport}) minus panel (${out.panelWidth})`)
+  t.is(out.marginCollapsed, '36px')
+  t.is(out.marginReopened, `${out.panelWidth}px`)
+  t.is(out.marginAfterRemove, '0px')
+})

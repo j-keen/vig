@@ -51,6 +51,11 @@ export class SidePanel extends HTMLElement {
     this._unregisterTheme = Settings.registerPanel(this)
 
     this.setupCollapse()
+    // 폭이 바뀔 때마다(접기, 테스트 모드, 향후 폭 설정) 페이지 여백을 다시 맞춘다
+    if (typeof ResizeObserver !== 'undefined') {
+      this._resizeObserver = new ResizeObserver(() => this.reservePageSpace())
+      this._resizeObserver.observe(this)
+    }
     this.setupTabs()
     this.setupAICopy()
     this.setupSettingsPopover()
@@ -76,7 +81,35 @@ export class SidePanel extends HTMLElement {
     if (this.visbug && this.visbug.selectorEngine) {
       this.visbug.selectorEngine.removeSelectedCallback(this._onSelectedUpdate)
     }
+    this._resizeObserver && this._resizeObserver.disconnect()
+    this.releasePageSpace()
     this.hidePopover && this.hidePopover()
+  }
+
+  // ---- 페이지 밀어내기 ---------------------------------------------------
+  // 패널이 페이지를 덮지 않도록 <html>에 패널 폭만큼 margin-right 를 준다.
+  // (position:fixed / 100vw 로 배치된 페이지 요소는 밀리지 않는다 — 한계.)
+
+  reservePageSpace() {
+    const root = document.documentElement
+    if (this._origMarginRight === undefined) {
+      this._origMarginRight = {
+        value: root.style.getPropertyValue('margin-right'),
+        priority: root.style.getPropertyPriority('margin-right'),
+      }
+    }
+    const measured = this.getBoundingClientRect().width
+    const width = measured || (this.hasAttribute('data-collapsed') ? 36 : 280)
+    root.style.setProperty('margin-right', `${Math.round(width)}px`, 'important')
+  }
+
+  releasePageSpace() {
+    if (this._origMarginRight === undefined) return
+    const root = document.documentElement
+    const { value, priority } = this._origMarginRight
+    if (value) root.style.setProperty('margin-right', value, priority)
+    else root.style.removeProperty('margin-right')
+    this._origMarginRight = undefined
   }
 
   render() {
@@ -129,6 +162,7 @@ export class SidePanel extends HTMLElement {
     const applyCollapsed = s => {
       const collapsed = !!(s.positions && s.positions.sidePanelCollapsed)
       this.toggleAttribute('data-collapsed', collapsed)
+      this.reservePageSpace()
     }
     applyCollapsed(Settings.get())
     this._offCollapse = Settings.onChange(applyCollapsed)
@@ -138,6 +172,7 @@ export class SidePanel extends HTMLElement {
       e.stopPropagation()
       const next = !this.hasAttribute('data-collapsed')
       this.toggleAttribute('data-collapsed', next)
+      this.reservePageSpace()
       Settings.set({ positions: { sidePanelCollapsed: next } })
     })
   }
