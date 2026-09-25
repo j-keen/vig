@@ -53,6 +53,13 @@
   }
 }
 
+/* hidden 속성은 아래 display 규칙에 밀려 무시되므로 명시적으로 숨긴다 */
+:host li[hidden],
+:host > ol[hidden],
+:host [settings-popover][hidden] {
+  display: none !important;
+}
+
 :host li {
   height: 2.25em;
   width: 2.25em;

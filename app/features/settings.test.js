@@ -32,15 +32,18 @@ test.serial('Toolbar shows 6 visible tools; margin/padding/font/hueshift are hid
     const lis = [...vb.$shadow.querySelectorAll('ol:first-of-type > li')]
     return {
       total: lis.length,
-      visible: lis.filter(li => !li.hasAttribute('hidden')).map(li => li.dataset.tool),
-      hidden: lis.filter(li => li.hasAttribute('hidden')).map(li => li.dataset.tool),
-      colorsHidden: vb.$shadow.querySelector('ol[colors]').hasAttribute('hidden'),
+      // 속성이 아니라 실제 렌더링 여부(display)로 검사한다. author CSS 가 UA [hidden] 을 덮을 수 있다.
+      visible: lis.filter(li => getComputedStyle(li).display !== 'none').map(li => li.dataset.tool),
+      hidden: lis.filter(li => getComputedStyle(li).display === 'none').map(li => li.dataset.tool),
+      colorsHidden: getComputedStyle(vb.$shadow.querySelector('ol[colors]')).display === 'none',
+      toolbarHeight: vb.$shadow.querySelector('ol:first-of-type').getBoundingClientRect().height,
     }
   })
   t.is(info.total, 10)
   t.deepEqual(info.visible, ['position', 'text', 'align', 'move', 'guides', 'aicopy'])
   t.deepEqual(info.hidden, ['margin', 'padding', 'font', 'hueshift'])
   t.true(info.colorsHidden)
+  t.true(info.toolbarHeight < 6 * 40 + 20, `toolbar should be 6 buttons tall, got ${info.toolbarHeight}px`)
 
   await page.keyboard.press('m')
   await page.waitForTimeout(100)
