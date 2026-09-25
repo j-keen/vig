@@ -740,6 +740,7 @@ export class TextToolbar extends HTMLElement {
     if (!rects.length) { this.hide(); return }
 
     const top = Math.min(...rects.map(r => r.top))
+    const bottom = Math.max(...rects.map(r => r.bottom))
     const left = Math.min(...rects.map(r => r.left))
     const right = Math.max(...rects.map(r => r.right))
 
@@ -753,8 +754,14 @@ export class TextToolbar extends HTMLElement {
     let viewportX = left + (right - left) / 2 - width / 2
     let viewportY = top - height - 10
 
-    // keep inside the viewport - flip below the element when there's no room above
-    if (viewportY < 4) viewportY = clamp(top + 10, 4, window.innerHeight - height - 4)
+    // 위에 자리가 없으면 요소 아래로 보낸다 (요소 위에 겹쳐서 글자를 가리지 않게).
+    // 아래에도 자리가 없으면(요소가 화면을 꽉 채운 경우) 화면 맨 아래에 붙인다.
+    if (viewportY < 4) {
+      const below = bottom + 10
+      viewportY = below + height <= window.innerHeight - 4
+        ? below
+        : window.innerHeight - height - 4
+    }
     viewportX = clamp(viewportX, 4, Math.max(4, window.innerWidth - width - 4))
 
     this.style.left = `${viewportX + scrollX}px`

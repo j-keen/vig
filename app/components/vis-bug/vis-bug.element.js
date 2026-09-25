@@ -318,7 +318,7 @@ export default class VisBug extends HTMLElement {
         </li>
       </ol>
       <ol settings>
-        <li data-settings-toggle aria-label="설정" title="설정: 테마 · 투명도 · 패널 위치">
+        <li data-settings-toggle aria-label="설정" title="설정: 테마 · 투명도 · 패널 위치 (DesignPoke ${this.getAttribute('version') || 'dev'})">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         </li>
       </ol>
@@ -334,6 +334,7 @@ export default class VisBug extends HTMLElement {
         <div class="row">
           <button type="button" name="reset-positions">패널 위치 초기화</button>
         </div>
+        <div class="row version-row"><small>DesignPoke <span class="version">${this.getAttribute('version') || 'dev'}</span></small></div>
       </div>
       <style>
         ol[settings] > li { box-sizing:border-box; padding:0; cursor:pointer; color: inherit; }
@@ -351,6 +352,7 @@ export default class VisBug extends HTMLElement {
         [settings-popover] input[type=range] { flex: 1; min-width: 90px; }
         [settings-popover] button { font: inherit; padding: 4px 8px; border-radius: 6px; border: 1px solid hsla(0,0%,50%,.4); background: transparent; color: inherit; cursor: pointer; }
         [settings-popover] button:hover { background: hsla(0,0%,50%,.2); }
+        [settings-popover] .version-row { justify-content:flex-end; margin-top:8px; opacity:.6; font-size:11px; }
         :host([color-scheme="light"]) [settings-popover] { --theme-bg: #fff; --theme-color: #111; }
       </style>
     `

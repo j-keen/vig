@@ -237,3 +237,24 @@ test.serial('Text toolbar: Settings theme/opacity are applied to the toolbar hos
 
   t.is(opacity, '0.6', 'Settings.set({opacity:0.6}) should set the toolbar host style.opacity to "0.6"')
 })
+
+test.serial('Text toolbar: when there is no room above, it goes below the element instead of covering it', async t => {
+  const { page } = t.context
+  await changeMode({ tool: 'text', page })
+  await page.evaluate(() => {
+    const el = document.createElement('h1')
+    el.id = 'top-heading'
+    el.textContent = 'Heading at the very top'
+    el.style.cssText = 'position:fixed;left:200px;top:4px;margin:0;font-size:28px;z-index:1;background:#fff;'
+    document.body.appendChild(el)
+  })
+  await page.click('#top-heading')
+  await page.waitForTimeout(250)
+  const out = await page.evaluate(() => {
+    const el = document.getElementById('top-heading').getBoundingClientRect()
+    const tb = document.querySelector('visbug-text-toolbar').getBoundingClientRect()
+    return { elBottom: el.bottom, tbTop: tb.top, tbHeight: tb.height, visible: tb.height > 0 }
+  })
+  t.true(out.visible, 'toolbar should be shown')
+  t.true(out.tbTop >= out.elBottom, `toolbar top (${out.tbTop}) should be at or below the element bottom (${out.elBottom})`)
+})
