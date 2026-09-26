@@ -3,6 +3,7 @@
 // 페이지 컨텍스트 + 원본값/변화량(delta) + 자연어 설명 포함
 
 import { ChangeTracker, trackedProperties, formatTrackedValue } from './change-tracker'
+import { Kit } from './kit'
 
 // CSS 속성명을 kebab-case로 변환
 function toKebabCase(str) {
@@ -466,13 +467,32 @@ export function formatElementForAI(element, changes, index) {
     lines.push(`- HTML: ${snippet}`)
   }
 
+  if (changes && changes._kit) {
+    const kit = changes._kit
+    const modeLabel = kit.mode === 'block' ? '통째로 교체' : '모양만'
+    lines.push(`- 킷 적용: "${kit.itemName}" (${modeLabel})`)
+
+    if (kit.mode === 'block') {
+      const originalHTML = kit.originalHTML || ''
+      const trimmedOriginal = originalHTML.length > 600 ? originalHTML.slice(0, 600) + '...' : originalHTML
+      lines.push(`- 원래 HTML: ${trimmedOriginal}`)
+      lines.push(`- 새 HTML: ${getOuterHTMLSnippet(element, 600)}`)
+    }
+
+    const kitItem = Kit.get(kit.itemId)
+    const cssEntries = kitItem && kitItem.css
+      ? Object.entries(kitItem.css).filter(([, v]) => v != null && String(v).trim() !== '')
+      : []
+    lines.push(`- 킷 CSS: ${cssEntries.map(([prop, value]) => `${toKebabCase(prop)}: ${value}`).join('; ')}`)
+  }
+
   if (changes._text) {
     const from = truncateTrackedText(changes._text.original)
     const to = truncateTrackedText(changes._text.current)
     lines.push(`- 텍스트: "${from}" → "${to}"`)
   }
 
-  const styleEntries = Object.entries(changes).filter(([prop]) => prop !== '_text' && prop !== '_note')
+  const styleEntries = Object.entries(changes).filter(([prop]) => prop !== '_text' && prop !== '_note' && prop !== '_kit')
   if (styleEntries.length) {
     lines.push(`- 변경 내용:`)
   }

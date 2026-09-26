@@ -69,6 +69,28 @@
     }
   })
 
+  // 내 킷 저장 브릿지: 페이지(world) -> 콘텐츠 스크립트 -> chrome.storage.local (전역 킷 아이템)
+  const KIT_KEY = 'designpoke.kit'
+  window.addEventListener('message', async (event) => {
+    if (event.source !== window || !event.data) return
+    if (event.data.type === 'VISBUG_KIT_GET') {
+      try {
+        const stored = await platform.storage.local.get(KIT_KEY)
+        window.postMessage({ type: 'VISBUG_KIT_GET_RESPONSE', items: stored[KIT_KEY] || null }, '*')
+      } catch (err) {
+        window.postMessage({ type: 'VISBUG_KIT_GET_RESPONSE', items: null, error: err.message }, '*')
+      }
+    }
+    else if (event.data.type === 'VISBUG_KIT_SET') {
+      try {
+        await platform.storage.local.set({ [KIT_KEY]: event.data.items })
+        window.postMessage({ type: 'VISBUG_KIT_SET_RESPONSE', ok: true }, '*')
+      } catch (err) {
+        window.postMessage({ type: 'VISBUG_KIT_SET_RESPONSE', ok: false, error: err.message }, '*')
+      }
+    }
+  })
+
   // 페이지 -> 콘텐츠 스크립트 -> 서비스 워커 브릿지 (postMessage 사용)
   window.addEventListener('message', async (event) => {
     if (event.source !== window) return

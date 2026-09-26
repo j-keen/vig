@@ -456,6 +456,9 @@ export const PropsPanelStyles = `
   :host([data-theme="light"]) .order-btn:hover {
     background: hsl(0 0% 92%);
   }
+
+  /* author display 규칙이 UA [hidden] 을 덮지 않도록 하는 안전망 (1.2.1 교훈) */
+  [hidden] { display: none !important; }
 `
 
 export default PropsPanelStyles

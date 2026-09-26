@@ -70,6 +70,11 @@ export function formatElementChanges(element, changes) {
     lines.push(`  텍스트: "${changes._text.original}" → "${changes._text.current}"`)
   }
 
+  if (changes._kit) {
+    const modeLabel = changes._kit.mode === 'block' ? '통째로' : '모양만'
+    lines.push(`  킷: "${changes._kit.itemName}" (${modeLabel})`)
+  }
+
   if (changes.color) lines.push(`  글자색: ${formatTrackedValue('color', changes.color)}`)
   if (changes.backgroundColor) lines.push(`  배경색: ${formatTrackedValue('backgroundColor', changes.backgroundColor)}`)
   if (changes.borderColor) lines.push(`  테두리색: ${formatTrackedValue('borderColor', changes.borderColor)}`)

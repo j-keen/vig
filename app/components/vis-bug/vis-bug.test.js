@@ -44,7 +44,7 @@ test('Should have no visible left toolbar (only the invisible <vis-bug> controll
   t.is(info.hotkeysRendered, 0, 'the hotkey-map trainer should not be rendered')
 })
 
-test('Should mount a right side panel shell with 속성/이력 tabs', async t => {
+test('Should mount a right side panel shell with 속성/킷/이력 tabs', async t => {
   const { page } = t.context
   await page.waitForSelector('visbug-side-panel')
 
@@ -61,7 +61,7 @@ test('Should mount a right side panel shell with 속성/이력 tabs', async t =>
   })
 
   t.true(info.exists)
-  t.is(info.tabCount, 2)
+  t.is(info.tabCount, 3)
   t.true(info.propsVisible, '속성 tab should be shown by default')
   t.true(info.historyHidden, '이력 tab content should start hidden')
   t.true(info.right <= 1, 'shell should be flush with the right edge')

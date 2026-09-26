@@ -299,3 +299,6 @@
   background: var(--dp-scrollbar-thumb);
   border-radius: 3px;
 }
+
+/* 안전망: author display 규칙이 UA [hidden] 을 덮지 않도록 */
+[hidden] { display: none !important; }

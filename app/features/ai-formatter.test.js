@@ -844,4 +844,84 @@ test('outerHTML snippet and final inline style strip tool-only drag/selection st
   t.false(finalInlineLine.includes('outline'))
 })
 
+test('formatElementForAI includes kit info for a style-mode kit swap', async t => {
+  const { page } = t.context
+
+  const result = await page.evaluate(async () => {
+    const Kit = window.DesignPokeKit
+    await Kit.load()
+
+    const el = document.createElement('button')
+    el.textContent = 'CTA'
+    document.body.appendChild(el)
+
+    const added = Kit.add({
+      name: '테스트 스타일 킷',
+      html: '<button>버튼</button>',
+      css: { backgroundColor: '#ff0000', color: '#ffffff', backgroundImage: '' },
+      classes: '',
+      size: { w: 10, h: 10 },
+      source: { url: '', selector: '', file: null },
+    })
+
+    const changes = { _kit: { itemId: added.id, itemName: added.name, mode: 'style' } }
+    const text = window.AIFormatter.formatElementForAI(el, changes)
+
+    Kit.remove(added.id)
+    el.remove()
+
+    return { text }
+  })
+
+  t.true(result.text.includes('킷 적용: "테스트 스타일 킷" (모양만)'))
+  t.true(result.text.includes('킷 CSS:'))
+  t.true(result.text.includes('background-color: #ff0000'))
+  t.false(result.text.includes('원래 HTML'), 'style mode should not include HTML before/after lines')
+  t.false(result.text.includes('새 HTML'), 'style mode should not include HTML before/after lines')
+})
+
+test('formatElementForAI includes original/new HTML and kit CSS for a block-mode kit swap', async t => {
+  const { page } = t.context
+
+  const result = await page.evaluate(async () => {
+    const Kit = window.DesignPokeKit
+    await Kit.load()
+
+    const el = document.createElement('div')
+    el.className = 'new-card'
+    el.innerHTML = '<h2>제목</h2>'
+    document.body.appendChild(el)
+
+    const added = Kit.add({
+      name: '테스트 블록 킷',
+      html: '<div class="new-card"><h2>제목</h2></div>',
+      css: { borderRadius: '12px' },
+      classes: '',
+      size: { w: 10, h: 10 },
+      source: { url: '', selector: '', file: null },
+    })
+
+    const changes = {
+      _kit: {
+        itemId: added.id,
+        itemName: added.name,
+        mode: 'block',
+        originalHTML: '<div class="card"><h3>원래 제목</h3></div>',
+      },
+    }
+    const text = window.AIFormatter.formatElementForAI(el, changes)
+
+    Kit.remove(added.id)
+    el.remove()
+
+    return { text }
+  })
+
+  t.true(result.text.includes('킷 적용: "테스트 블록 킷" (통째로 교체)'))
+  t.true(result.text.includes('원래 HTML: <div class="card"><h3>원래 제목</h3></div>'))
+  t.true(result.text.includes('새 HTML:'))
+  t.true(result.text.includes('킷 CSS:'))
+  t.true(result.text.includes('border-radius: 12px'))
+})
+
 test.afterEach(teardownPptrTab)

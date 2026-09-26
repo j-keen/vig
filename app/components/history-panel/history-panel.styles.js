@@ -456,6 +456,9 @@ export const HistoryPanelStyles = `
     opacity: 1;
     transform: translateX(-50%) translateY(0);
   }
+
+  /* author display 규칙이 UA [hidden] 을 덮지 않도록 하는 안전망 (1.2.1 교훈) */
+  [hidden] { display: none !important; }
 `
 
 export default HistoryPanelStyles

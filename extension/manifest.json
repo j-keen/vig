@@ -1,6 +1,6 @@
 {
   "name": "DesignPoke - 디자인 조정기",
-  "version": "1.3.1",
+  "version": "1.4.0",
   "description": "웹페이지 디자인을 드래그로 조정하고 AI에게 전달할 수 있는 도구",
   "manifest_version": 3,
   "icons": { "128": "icons/designpoke-dev.png" },

@@ -129,12 +129,14 @@ export class SidePanel extends HTMLElement {
         </div>
         <div class="tabs" role="tablist">
           <button class="tab" data-tab="props" role="tab" aria-selected="true">속성</button>
+          <button class="tab" data-tab="kit" role="tab" aria-selected="false">킷</button>
           <button class="tab" data-tab="history" role="tab" aria-selected="false">
             이력 <span class="badge" hidden>0</span>
           </button>
         </div>
         <div class="body">
           <div class="tab-panel" data-tab-panel="props"><slot name="props"></slot></div>
+          <div class="tab-panel" data-tab-panel="kit" hidden><slot name="kit"></slot></div>
           <div class="tab-panel" data-tab-panel="history" hidden><slot name="history"></slot></div>
         </div>
         <div class="settings-popover" hidden>

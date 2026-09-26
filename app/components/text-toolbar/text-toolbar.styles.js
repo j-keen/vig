@@ -334,4 +334,7 @@ export const TextToolbarStyles = `
   .opacity-range {
     width: 70px;
   }
+
+  /* author display 규칙이 UA [hidden] 을 덮지 않도록 하는 안전망 (1.2.1 교훈) */
+  [hidden] { display: none !important; }
 `

@@ -121,6 +121,12 @@ const redoStack = []
 // 요소별 직전 커밋 인라인 스타일 (단계별 undo용)
 const lastCommittedInline = new WeakMap()
 
+// 킷(내 킷) 관련 추적
+//   kitRefs: 스타일 모드로 적용된 요소 -> { itemId, itemName, mode: 'style' }
+//   kitSwaps: 통째로 교체된 새 요소(newEl) -> { oldEl, oldHTML, itemId, itemName, mode: 'block', identifier }
+const kitRefs = new Map()
+const kitSwaps = new Map()
+
 function snapshotInline(element) {
   const snap = {}
   trackedProperties.forEach(prop => {
@@ -259,13 +265,38 @@ export function getPageNote() {
   return pageNote || null
 }
 
+// 요소에 킷 참조 설정 (스타일 모드 적용 시). getKitRef 로 조회 가능하고
+// getChanges/getAllChanges 결과에 _kit 으로 포함된다.
+export function setKitRef(element, ref) {
+  if (!element) return
+  kitRefs.set(element, ref)
+}
+
+export function getKitRef(element) {
+  return kitRefs.get(element) || null
+}
+
+function kitInfoFor(element) {
+  const swap = kitSwaps.get(element)
+  if (swap) {
+    return { itemId: swap.itemId, itemName: swap.itemName, mode: swap.mode, originalHTML: swap.oldHTML }
+  }
+  const ref = kitRefs.get(element)
+  if (ref) {
+    return { itemId: ref.itemId, itemName: ref.itemName, mode: ref.mode }
+  }
+  return null
+}
+
 export function getChanges(element) {
   const styles = trackedElements.has(element) ? trackedElements.get(element) : {}
   const text = textChangedElements.get(element)
   const note = elementNotes.get(element)
-  const merged = (text || note) ? Object.assign({}, styles) : styles
+  const kit = kitInfoFor(element)
+  const merged = (text || note || kit) ? Object.assign({}, styles) : styles
   if (text) merged._text = text
   if (note) merged._note = note
+  if (kit) merged._kit = kit
   return merged
 }
 
@@ -290,6 +321,20 @@ export function getAllChanges() {
     result.set(element, existing)
   })
 
+  kitRefs.forEach((ref, element) => {
+    if (kitSwaps.has(element)) return
+    const existing = result.get(element) || {}
+    existing._kit = { itemId: ref.itemId, itemName: ref.itemName, mode: ref.mode }
+    result.set(element, existing)
+  })
+
+  // 통째로 교체된 요소는 스타일 변경이 없어도 항상 포함
+  kitSwaps.forEach((swap, element) => {
+    const existing = result.get(element) || {}
+    existing._kit = { itemId: swap.itemId, itemName: swap.itemName, mode: swap.mode, originalHTML: swap.oldHTML }
+    result.set(element, existing)
+  })
+
   return result
 }
 
@@ -301,6 +346,8 @@ export function removeElement(element) {
   textChangedElements.delete(element)
   lastCommittedText.delete(element)
   elementNotes.delete(element)
+  kitRefs.delete(element)
+  kitSwaps.delete(element)
 }
 
 // 요소의 식별자를 생성 (삭제 후에도 추적용)
@@ -322,6 +369,24 @@ function isOverlayNode(element) {
   if (!element || !element.tagName) return true
   const tag = element.tagName.toLowerCase()
   return tag === 'vis-bug' || tag.startsWith('visbug')
+}
+
+// 킷 교체 기록용: data-selected/data-label-id 를 제거한 outerHTML, 길이 제한
+function cleanedOuterHTML(element, maxLen = 4000) {
+  if (!element) return ''
+  let html = ''
+  try {
+    const clone = element.cloneNode ? element.cloneNode(true) : null
+    if (clone && clone.removeAttribute) {
+      clone.removeAttribute('data-selected')
+      clone.removeAttribute('data-label-id')
+    }
+    html = (clone && clone.outerHTML) || element.outerHTML || ''
+  } catch (e) {
+    html = element.outerHTML || ''
+  }
+  if (html.length > maxLen) html = html.slice(0, maxLen) + '...'
+  return html
 }
 
 // 요소 삭제 추적
@@ -369,6 +434,41 @@ export function trackDeletion(element) {
   removeElement(element)
 }
 
+// 킷 아이템으로 요소를 통째로 교체한 것을 추적 (undo/redo, AI 프롬프트 반영)
+export function trackKitSwap({ oldEl, newEl, item, mode }) {
+  if (!oldEl || !newEl || !item) return
+
+  const identifier = getElementIdentifier(oldEl)
+  const oldHTML = cleanedOuterHTML(oldEl, 4000)
+  const parent = oldEl.parentElement
+
+  // 교체되어 사라지는 oldEl 의 기존 추적 상태는 더 이상 의미가 없으므로 정리
+  removeElement(oldEl)
+
+  kitSwaps.set(newEl, {
+    oldEl,
+    oldHTML,
+    itemId: item.id,
+    itemName: item.name,
+    mode: mode || 'block',
+    identifier,
+  })
+
+  undoStack.push({
+    type: 'kit',
+    oldEl,
+    newEl,
+    oldHTML,
+    parent,
+    itemId: item.id,
+    itemName: item.name,
+    identifier,
+  })
+
+  // Redo 스택 초기화 (새 변경이 생기면 redo 불가)
+  redoStack.length = 0
+}
+
 // 삭제된 요소 목록 조회
 export function getDeletedElements() {
   return [...deletedElements]
@@ -382,6 +482,8 @@ export function clearAll() {
   deletedElements.length = 0  // 삭제 기록도 초기화
   undoStack.length = 0
   redoStack.length = 0
+  kitRefs.clear()
+  kitSwaps.clear()
   // WeakMap doesn't need clearing - GC handles it
 }
 
@@ -390,6 +492,7 @@ export function hasChanges() {
   if (textChangedElements.size > 0) return true
   if (elementNotes.size > 0) return true
   if (pageNote) return true
+  if (kitSwaps.size > 0) return true
   for (const [, changes] of trackedElements) {
     if (Object.keys(changes).length > 0) return true
   }
@@ -403,6 +506,7 @@ export function getTrackedCount() {
   })
   textChangedElements.forEach((_, element) => unique.add(element))
   elementNotes.forEach((_, element) => unique.add(element))
+  kitSwaps.forEach((_, element) => unique.add(element))
   return unique.size + deletedElements.length + (pageNote ? 1 : 0)
 }
 
@@ -486,6 +590,24 @@ export function undo() {
       return { type: 'text', element, identifier }
     }
 
+    // 킷 교체 undo 처리 (통째로 교체 -> 원래 요소로 복원)
+    if (last.type === 'kit') {
+      const { oldEl, newEl, oldHTML, parent, itemId, itemName, identifier } = last
+
+      // 이미 DOM에서 분리된 경우 복원할 수 없으므로 건너뛰고 다음 항목으로
+      if (!newEl || !newEl.isConnected) {
+        kitSwaps.delete(newEl)
+        continue
+      }
+
+      newEl.replaceWith(oldEl)
+      kitSwaps.delete(newEl)
+
+      redoStack.push({ type: 'kit', oldEl, newEl, oldHTML, parent, itemId, itemName, identifier })
+
+      return { type: 'kit', element: oldEl, identifier }
+    }
+
     // 스타일 변경 undo 처리
     const { element, originalInline, identifier } = last
 
@@ -547,6 +669,20 @@ export function redo() {
     lastCommittedText.set(element, currentText)
     syncTextChange(element)
     return { type: 'text', element, identifier }
+  }
+
+  // 킷 교체 redo 처리 (다시 통째로 교체)
+  if (last.type === 'kit') {
+    const { oldEl, newEl, oldHTML, parent, itemId, itemName, identifier } = last
+
+    if (!oldEl || !oldEl.isConnected) return null
+
+    oldEl.replaceWith(newEl)
+    kitSwaps.set(newEl, { oldEl, oldHTML, itemId, itemName, mode: 'block', identifier })
+
+    undoStack.push({ type: 'kit', oldEl, newEl, oldHTML, parent, itemId, itemName, identifier })
+
+    return { type: 'kit', element: newEl, identifier }
   }
 
   // 스타일 변경 redo 처리
@@ -626,6 +762,13 @@ export function toggleCompareMode(showOriginal) {
       element.textContent = textInfo.original
       results.push({ element, kind: 'text', savedText })
     })
+
+    // 통째로 교체된 요소도 원래 요소로 임시 교체
+    kitSwaps.forEach((swap, newEl) => {
+      if (!newEl || !newEl.isConnected || !newEl.parentNode) return
+      newEl.parentNode.replaceChild(swap.oldEl, newEl)
+      results.push({ element: newEl, kind: 'kit', oldEl: swap.oldEl, newEl })
+    })
   }
 
   return results
@@ -638,6 +781,12 @@ export function restoreFromCompare(savedStates) {
 
     if (entry.kind === 'text') {
       entry.element.textContent = entry.savedText
+      return
+    }
+
+    if (entry.kind === 'kit') {
+      const { oldEl, newEl } = entry
+      if (oldEl && oldEl.parentNode) oldEl.parentNode.replaceChild(newEl, oldEl)
       return
     }
 
@@ -690,6 +839,9 @@ export const ChangeTracker = {
   removeElement,
   trackDeletion,
   getDeletedElements,
+  setKitRef,
+  getKitRef,
+  trackKitSwap,
   clearAll,
   hasChanges,
   getTrackedCount,

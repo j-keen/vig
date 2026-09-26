@@ -89,6 +89,14 @@ export default class VisBug extends HTMLElement {
       this.sidePanel.appendChild(this.propsPanel)
     }
 
+    // 내 킷 탭 (visbug-kit-panel) — 정의돼 있을 때만 마운트
+    if (customElements.get('visbug-kit-panel')) {
+      this.kitPanel = document.createElement('visbug-kit-panel')
+      this.kitPanel.slot = 'kit'
+      this.kitPanel.visbug = this
+      this.sidePanel.appendChild(this.kitPanel)
+    }
+
     document.body.appendChild(this.sidePanel)
 
     if (typeof Features.Notes === 'function') {
